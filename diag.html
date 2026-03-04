@@ -1,0 +1,98 @@
+<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+
+<title>LIQUIDITY DIAG</title>
+<style>
+body{background:#050810;color:#e8edf5;font-family:monospace;padding:16px;font-size:13px}
+h2{color:#00d4ff;margin-bottom:16px;font-size:18px}
+.row{padding:10px 12px;border-radius:8px;margin-bottom:8px;border:1px solid #1e2d42;background:#0c1220}
+.label{font-size:11px;color:#5a7080;margin-bottom:4px}
+.status{font-size:13px;font-weight:bold}
+.ok{color:#00e599}.fail{color:#ff3b5c}.wait{color:#ffd93d}
+button{display:block;width:100%;padding:12px;background:#111927;border:1px solid #1e2d42;border-radius:8px;color:#00d4ff;font-family:monospace;font-size:12px;cursor:pointer;margin-bottom:10px}
+.log{background:#050810;border:1px solid #1e2d42;border-radius:8px;padding:10px;font-size:10px;color:#5a7080;max-height:200px;overflow-y:auto;margin-top:12px;line-height:1.6}
+</style></head><body>
+<h2>🔧 LIQUIDITY DIAGNOSTICS</h2>
+<p style="font-size:11px;color:#5a7080;margin-bottom:16px">Tests each data source used by the app. Run this on your iPhone to see what works.</p>
+<button onclick="runAll()">▶ Run All Tests</button>
+
+<div id="results"></div>
+<div class="log" id="log">Tap Run All Tests…</div>
+
+<script>
+var log=[];
+function lg(msg){log.push(msg);document.getElementById('log').innerHTML=log.slice(-30).join('<br>')}
+
+var TESTS=[
+  {id:'direct-stooq',label:'Direct Stooq (SPY)',url:'https://stooq.com/q/d/l/?s=SPY.US&d1=20260101&d2=20260301&i=d',check:t=>t.includes(',')&&t.split('\n').length>5},
+  {id:'allorigins-stooq',label:'AllOrigins → Stooq (SPY)',url:'https://api.allorigins.win/raw?url='+encodeURIComponent('https://stooq.com/q/d/l/?s=SPY.US&d1=20260101&d2=20260301&i=d'),check:t=>t.includes(',')&&t.split('\n').length>5},
+  {id:'corsproxy-stooq',label:'Corsproxy → Stooq (SPY)',url:'https://corsproxy.io/?'+encodeURIComponent('https://stooq.com/q/d/l/?s=SPY.US&d1=20260101&d2=20260301&i=d'),check:t=>t.includes(',')&&t.split('\n').length>5},
+  {id:'thingproxy-stooq',label:'Thingproxy → Stooq (SPY)',url:'https://thingproxy.freeboard.io/fetch/https://stooq.com/q/d/l/?s=SPY.US&d1=20260101&d2=20260301&i=d',check:t=>t.includes(',')&&t.split('\n').length>5},
+  {id:'allorigins-fred',label:'AllOrigins → FRED (WALCL)',url:'https://api.allorigins.win/raw?url='+encodeURIComponent('https://fred.stlouisfed.org/graph/fredgraph.csv?id=WALCL'),check:t=>t.includes('DATE')&&t.split('\n').length>5},
+  {id:'corsproxy-fred',label:'Corsproxy → FRED (WALCL)',url:'https://corsproxy.io/?'+encodeURIComponent('https://fred.stlouisfed.org/graph/fredgraph.csv?id=WALCL'),check:t=>t.includes('DATE')&&t.split('\n').length>5},
+  {id:'thingproxy-fred',label:'Thingproxy → FRED (WALCL)',url:'https://thingproxy.freeboard.io/fetch/https://fred.stlouisfed.org/graph/fredgraph.csv?id=WALCL',check:t=>t.includes('DATE')&&t.split('\n').length>5},
+  {id:'binance',label:'Binance (BTC ticker)',url:'https://api.binance.com/api/v3/ticker/bookTicker?symbol=BTCUSDT',check:t=>t.includes('askPrice')},
+  {id:'allorigins-vix',label:'AllOrigins → Stooq (^VIX)',url:'https://api.allorigins.win/raw?url='+encodeURIComponent('https://stooq.com/q/d/l/?s=%5EVIX&d1=20260101&d2=20260301&i=d'),check:t=>t.includes(',')&&t.split('\n').length>3},
+  {id:'corsproxy-vix',label:'Corsproxy → Stooq (^VIX)',url:'https://corsproxy.io/?'+encodeURIComponent('https://stooq.com/q/d/l/?s=%5EVIX&d1=20260101&d2=20260301&i=d'),check:t=>t.includes(',')&&t.split('\n').length>3},
+];
+
+function setRow(id,state,detail){
+  var el=document.getElementById('r-'+id);
+  if(!el)return;
+  var cols={ok:'ok',fail:'fail',wait:'wait'};
+  var icons={ok:'✅',fail:'❌',wait:'⏳'};
+  el.querySelector('.status').innerHTML=`<span class="${cols[state]}">${icons[state]} ${state.toUpperCase()}</span> <span style="font-size:10px;color:#5a7080">${detail||''}</span>`;
+}
+
+async function runTest(t){
+  setRow(t.id,'wait','fetching…');
+  lg(`→ ${t.label}`);
+  var start=Date.now();
+  try{
+    var ctrl=new AbortController();
+    var tid=setTimeout(()=>ctrl.abort(),15000);
+    var r=await fetch(t.url,{mode:'cors',cache:'no-store',credentials:'omit',signal:ctrl.signal});
+    clearTimeout(tid);
+    var ms=Date.now()-start;
+    if(!r.ok){setRow(t.id,'fail','HTTP '+r.status);lg(`  ✗ HTTP ${r.status} (${ms}ms)`);return{ok:false}}
+    var txt=await r.text();
+    var pass=t.check(txt);
+    var preview=txt.slice(0,60).replace(/\n/g,' ');
+    if(pass){setRow(t.id,'ok',ms+'ms · '+txt.split('\n').length+' lines');lg(`  ✓ OK (${ms}ms) "${preview}"`);return{ok:true,proxy:t.id}}
+    else{setRow(t.id,'fail','bad data: "'+preview+'"');lg(`  ✗ Bad data (${ms}ms)`);return{ok:false}}
+  }catch(e){
+    var ms=Date.now()-start;
+    setRow(t.id,'fail',e.message||'blocked');
+    lg(`  ✗ ${e.message||'error'} (${ms}ms)`);
+    return{ok:false};
+  }
+}
+
+function buildRows(){
+  var el=document.getElementById('results');
+  el.innerHTML=TESTS.map(t=>`
+    <div class="row" id="r-${t.id}">
+      <div class="label">${t.label}</div>
+      <div class="status wait">⏳ WAITING</div>
+    </div>`).join('');
+}
+
+async function runAll(){
+  log=[];buildRows();
+  lg('Starting tests on '+navigator.userAgent.slice(0,80)+'…');
+  var working=[];
+  for(var t of TESTS){
+    var res=await runTest(t);
+    if(res.ok)working.push(t.label);
+  }
+  lg('');
+  lg('=== SUMMARY ===');
+  if(working.length===0){
+    lg('❌ NO sources work — network may be blocking all cross-origin requests');
+  } else {
+    lg('✅ Working: '+working.join(', '));
+  }
+}
+buildRows();
+</script>
+
+</body></html>
