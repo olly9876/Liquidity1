@@ -1,5 +1,4 @@
 <!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="apple-mobile-web-app-capable" content="yes"><title>LIQUIDITY</title><link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Bebas+Neue&display=swap" rel="stylesheet"><style>:root{--bg:#050810;--s1:#0c1220;--s2:#111927;--bd:#1e2d42;--ac:#00d4ff;--ac2:#ff6b35;--ac4:#a855f7;--warn:#ffd93d;--red:#ff3b5c;--grn:#00e599;--tx:#e8edf5;--mt:#5a7080;--dim:#2a3d52}*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}body{background:var(--bg);color:var(--tx);font-family:'DM Mono',monospace;min-height:100vh;overflow-x:hidden}header{padding:12px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--bd);background:rgba(5,8,16,.97);position:sticky;top:0;z-index:100}.logo{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:4px;color:var(--ac)}.dot{width:7px;height:7px;border-radius:50%;background:var(--grn);animation:pulse 2s infinite;display:inline-block;margin-right:6px}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}.nav{display:flex;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;border-bottom:1px solid var(--bd);background:rgba(12,18,32,.98);position:sticky;top:45px;z-index:99}.nav::-webkit-scrollbar{display:none}.nb{flex:none;padding:10px 14px;font-family:'DM Mono',monospace;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--mt);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;white-space:nowrap}.nb.active{color:var(--ac);border-bottom-color:var(--ac)}.tab{padding:14px;display:none;padding-bottom:50px}.tab.active{display:block}.sec{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:3px;margin-bottom:10px}.card{background:var(--s1);border:1px solid var(--bd);border-radius:10px;padding:13px;margin-bottom:9px}.card.stale-warn{border-color:rgba(255,217,61,.4)}.card.stale-old{border-color:rgba(255,59,92,.35)}.clbl{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--mt);margin-bottom:6px}.chdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.val{font-family:'Bebas Neue',sans-serif;font-size:34px;line-height:1}.sub{font-size:10px;color:var(--mt);margin-top:3px}.dlt{font-size:11px;margin-top:4px}.up{color:var(--grn)}.dn{color:var(--red)}.neut{color:var(--warn)}.g2{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:9px}.badge{font-size:9px;padding:3px 9px;border-radius:10px;letter-spacing:1px}.bl{background:rgba(0,229,153,.12);color:var(--grn);border:1px solid rgba(0,229,153,.3)}.br{background:rgba(255,217,61,.12);color:var(--warn);border:1px solid rgba(255,217,61,.3)}.bo{background:rgba(0,212,255,.1);color:var(--ac);border:1px solid rgba(0,212,255,.2)}.brd{background:rgba(255,59,92,.1);color:var(--red);border:1px solid rgba(255,59,92,.3)}.note{background:rgba(0,212,255,.05);border:1px solid rgba(0,212,255,.15);border-radius:8px;padding:10px 12px;font-size:10px;color:var(--mt);line-height:1.6;margin-bottom:9px}.rnote{background:rgba(255,217,61,.06);border:1px solid rgba(255,217,61,.2);border-radius:8px;padding:8px 12px;font-size:10px;color:var(--warn);margin-bottom:9px;line-height:1.5}.brow{display:flex;align-items:center;gap:7px;margin-bottom:8px}.blbl{font-size:10px;width:90px;flex-shrink:0;color:var(--mt)}.btrk{flex:1;height:6px;background:var(--dim);border-radius:3px;overflow:hidden}.bfil{height:100%;border-radius:3px}.bval{font-size:10px;width:55px;text-align:right;flex-shrink:0}.pill{display:inline-block;font-size:9px;padding:2px 8px;border-radius:10px;margin:2px}.pu{background:rgba(0,229,153,.12);color:var(--grn)}.pd{background:rgba(255,59,92,.1);color:var(--red)}.pp{background:rgba(168,85,247,.1);color:var(--ac4)}.pb{background:rgba(0,229,153,.12);color:var(--grn);border:1px solid rgba(0,229,153,.3)}.rbtn{display:block;width:100%;padding:11px;background:var(--s2);border:1px solid var(--bd);border-radius:9px;color:var(--ac);font-family:'DM Mono',monospace;font-size:11px;cursor:pointer;margin-top:6px;letter-spacing:1px}.rts{font-size:9px;color:var(--mt);text-align:right;margin:4px 0}.age{font-size:9px;font-family:'DM Mono',monospace;padding:2px 7px;border-radius:8px;margin-left:6px}.age-live{background:rgba(0,229,153,.12);color:var(--grn)}.age-warn{background:rgba(255,217,61,.12);color:var(--warn)}.age-old{background:rgba(255,59,92,.1);color:var(--red)}.sp{width:100%;height:46px}.wi{width:100%;background:var(--s2);border:1px solid var(--bd);border-radius:7px;padding:10px 12px;color:var(--tx);font-family:'DM Mono',monospace;font-size:12px;outline:none;-webkit-appearance:none}.ab{background:var(--ac);color:#050810;border:none;border-radius:7px;padding:10px 20px;font-family:'DM Mono',monospace;font-size:11px;font-weight:600;cursor:pointer}.rng{height:6px;background:var(--dim);border-radius:3px;position:relative;margin:6px 0}.rnf{height:100%;border-radius:3px;background:linear-gradient(90deg,#ff3b5c,#ffd93d,#00e599)}.rnt{position:absolute;top:-4px;width:2px;height:14px;background:white;border-radius:1px;transform:translateX(-50%)}.rmv{background:rgba(255,59,92,.1);border:1px solid rgba(255,59,92,.25);color:var(--red);border-radius:5px;padding:3px 8px;font-size:10px;cursor:pointer;font-family:'DM Mono',monospace}.vol-badge{display:inline-block;font-size:9px;padding:2px 8px;border-radius:8px;margin-left:6px}.vol-high{background:rgba(0,229,153,.15);color:var(--grn);border:1px solid rgba(0,229,153,.3)}.vol-norm{background:rgba(90,112,128,.15);color:var(--mt);border:1px solid rgba(90,112,128,.3)}</style></head><body>
-
 <header><div class="logo">LIQUIDITY</div><div style="display:flex;align-items:center;gap:6px"><span class="dot"></span><span style="font-size:9px;color:var(--mt)" id="hdr-t"></span></div></header>
 <nav class="nav">
   <button class="nb active" onclick="ST('fed',this)">🏦 Fed</button>
@@ -12,7 +11,6 @@
 </nav>
 
 <!-- FED TAB -->
-
 <div class="tab active" id="tab-fed">
   <div class="sec">Fed Liquidity</div>
   <div id="fed-w"></div>
@@ -31,7 +29,6 @@
 </div>
 
 <!-- SPREADS TAB -->
-
 <div class="tab" id="tab-spreads">
   <div class="sec">Market Spreads</div>
   <div class="card" id="card-cs">
@@ -65,7 +62,6 @@
 </div>
 
 <!-- VIX TAB -->
-
 <div class="tab" id="tab-vix">
   <div class="sec">Volatility</div>
   <div class="g2">
@@ -89,7 +85,6 @@
 </div>
 
 <!-- MACRO TAB -->
-
 <div class="tab" id="tab-macro">
   <div class="sec">Macro</div>
   <div class="card" id="card-yc">
@@ -117,13 +112,12 @@
 </div>
 
 <!-- WATCHLIST TAB -->
-
 <div class="tab" id="tab-wl">
   <div class="sec">Watchlist</div>
   <div class="card">
     <div class="clbl" style="margin-bottom:7px">ADD TICKER</div>
     <div style="display:flex;gap:8px"><input class="wi" id="wi" placeholder="AAPL, NVDA…" style="flex:1" onkeydown="if(event.key==='Enter')addWL()"><button class="ab" onclick="addWL()">+ ADD</button></div>
-    <div style="font-size:9px;color:var(--mt);margin-top:5px">US stocks · data via Stooq</div>
+    <div style="font-size:9px;color:var(--mt);margin-top:5px">US stocks · data via Yahoo Finance</div>
   </div>
   <div id="wl-e" class="note">No stocks yet. Add tickers above.</div>
   <div id="wl-r"></div>
@@ -132,7 +126,6 @@
 </div>
 
 <!-- BREAKOUTS TAB -->
-
 <div class="tab" id="tab-scan">
   <div class="sec">Breakout Scanner</div>
   <div class="card">
@@ -161,7 +154,6 @@
 </div>
 
 <!-- FEAR/GREED TAB -->
-
 <div class="tab" id="tab-fg">
   <div class="sec">Fear / Greed</div>
   <div class="card" style="text-align:center">
@@ -259,8 +251,8 @@ function spark(id,data,col){
   s.innerHTML=`<defs><linearGradient id="${gi}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${col}" stop-opacity=".35"/><stop offset="100%" stop-color="${col}" stop-opacity=".02"/></linearGradient></defs><path d="${ar}" fill="url(#${gi})"/><polyline points="${ln}" fill="none" stroke="${col}" stroke-width="1.8" stroke-linejoin="round"/><circle cx="${pts[pts.length-1][0].toFixed(1)}" cy="${pts[pts.length-1][1].toFixed(1)}" r="3.5" fill="${col}"/>`;
 }
 
-// ── Safari-safe fetch with timeout ──────────────────────────────
-function tF(url,ms=14000){
+// ── Fetch with timeout (Safari-safe, no AbortController) ─────────
+function tF(url,ms=15000){
   return new Promise((resolve,reject)=>{
     var done=false;
     var tid=setTimeout(()=>{if(!done){done=true;reject(new Error('timeout'))}},ms);
@@ -272,69 +264,71 @@ function tF(url,ms=14000){
 
 // Button loading state helpers
 function btnLoad(el){if(!el)return;el._orig=el.textContent;el.textContent='⟳ Loading…';el.disabled=true;el.style.opacity='0.6'}
-function btnDone(el,ok){if(!el)return;el.textContent=ok?'✓ '+el._orig:el._orig;el.disabled=false;el.style.opacity='';setTimeout(()=>{if(el&&el.textContent.startsWith('✓'))el.textContent=el._orig},2000)}
+function btnDone(el,ok){if(!el)return;el.textContent=ok?'✓ '+el._orig:el._orig;el.disabled=false;el.style.opacity='';setTimeout(()=>{if(el&&el.textContent&&el.textContent.startsWith('✓'))el.textContent=el._orig},2500)}
 
-function toSq(s){
-  var m={SPY:'SPY.US',QQQ:'QQQ.US',IWM:'IWM.US',HYG:'HYG.US',LQD:'LQD.US',TLT:'TLT.US',
-    XLK:'XLK.US',XLY:'XLY.US',XLI:'XLI.US',XLF:'XLF.US',XLE:'XLE.US',XLV:'XLV.US',XLP:'XLP.US',XLU:'XLU.US',
-    'DX-Y.NYB':'DXY','^VIX':'^VIX','^TNX':'^TNX','^MOVE':'^MOVE','^VIX3M':'^VIX3M'};
-  return m[s]||((/^[A-Z]{1,5}$/.test(s))?s+'.US':s);
+// ── Yahoo Finance — proper CORS support, works on Safari iOS ──────
+// Maps common tickers to Yahoo symbols
+function toYH(s){
+  var m={
+    'DX-Y.NYB':'DX-Y.NYB','^VIX':'^VIX','^TNX':'^TNX','^VIX3M':'^VIX3M',
+    'SPY':'SPY','QQQ':'QQQ','IWM':'IWM','HYG':'HYG','LQD':'LQD','TLT':'TLT',
+    'XLK':'XLK','XLY':'XLY','XLI':'XLI','XLF':'XLF','XLE':'XLE',
+    'XLV':'XLV','XLP':'XLP','XLU':'XLU','XLC':'XLC',
+    'GLD':'GLD','SLV':'SLV'
+  };
+  return m[s]||s;
 }
 
-function pSq(t){
-  if(!t||t.indexOf(',')<0)return null;
-  var lines=t.trim().split('\n').slice(1);
-  var out=lines.map(l=>{var p=l.split(',');var c=parseFloat(p[4]),v=parseFloat(p[5]);return{c,v}}).filter(x=>x.c>0&&!isNaN(x.c));
-  out.reverse();
-  return out.length?out:null;
+// Parse Yahoo Finance v8 JSON response
+function pYH(json,withVol){
+  try{
+    var r=json.chart.result[0];
+    var closes=r.indicators.quote[0].close;
+    var vols=r.indicators.quote[0].volume||[];
+    var out=[];
+    for(var i=0;i<closes.length;i++){
+      if(closes[i]!=null&&!isNaN(closes[i])&&closes[i]>0){
+        out.push(withVol?{c:closes[i],v:vols[i]||0}:closes[i]);
+      }
+    }
+    return out.length>=2?out:null;
+  }catch(e){return null}
 }
 
-function pSqClose(t){var d=pSq(t);return d?d.map(x=>x.c):null;}
-
-// Try each proxy in sequence; return first success
-async function tryProxies(urls,parser,minLen=5){
+// Fetch price history from Yahoo Finance
+// Uses two endpoints: query1 (no auth) and query2 as fallback
+async function fC(sym,days=400,withVol=false){
+  var yh=toYH(sym);
+  var range=days>365?'2y':days>180?'1y':'6mo';
+  var urls=[
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yh)}?interval=1d&range=${range}&includePrePost=false`,
+    `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yh)}?interval=1d&range=${range}&includePrePost=false`,
+  ];
   for(var url of urls){
     try{
-      var r=await tF(url,13000);
+      var r=await tF(url,12000);
       if(!r.ok)continue;
-      var txt=await r.text();
-      var res=parser(txt);
-      if(res&&res.length>=minLen)return res;
+      var j=await r.json();
+      var res=pYH(j,withVol);
+      if(res&&res.length>=5)return res;
     }catch(e){}
   }
   return null;
 }
 
-async function fC(sym,days=400,withVol=false){
-  var s=toSq(sym),en=new Date(),st=new Date(+en-days*86400000);
-  var df=d=>d.toISOString().slice(0,10).replace(/-/g,'');
-  var sq=`https://stooq.com/q/d/l/?s=${encodeURIComponent(s)}&d1=${df(st)}&d2=${df(en)}&i=d`;
-  // Proxy list — allorigins tends to work on Safari iOS, corsproxy as backup
-  var urls=[
-    'https://api.allorigins.win/raw?url='+encodeURIComponent(sq),
-    'https://corsproxy.io/?'+encodeURIComponent(sq),
-    'https://thingproxy.freeboard.io/fetch/'+sq,
-  ];
-  // Also try direct (works on some networks)
-  try{var dr=await tF(sq,8000);if(dr.ok){var dt=await dr.text();var dd=pSq(dt);if(dd&&dd.length>=5)return withVol?dd:dd.map(x=>x.c)}}catch(e){}
-  var res=await tryProxies(urls,pSq);
-  if(res)return withVol?res:res.map(x=>x.c);
-  return null;
-}
-
+// ── FRED — supports CORS natively, call directly ──────────────────
 async function fFred(id,lim=20){
   var url=`https://fred.stlouisfed.org/graph/fredgraph.csv?id=${id}`;
-  var parser=txt=>{
-    var lines=txt.trim().split('\n').slice(1);
-    var out=lines.slice(-lim).map(l=>{var p=l.split(',');return{d:p[0].trim(),v:parseFloat(p[1])}}).filter(x=>x.d&&!isNaN(x.v));
-    return out.length?out:null;
-  };
-  var urls=[
-    'https://api.allorigins.win/raw?url='+encodeURIComponent(url),
-    'https://corsproxy.io/?'+encodeURIComponent(url),
-    'https://thingproxy.freeboard.io/fetch/'+url,
-  ];
-  return tryProxies(urls,parser,2);
+  try{
+    var r=await tF(url,12000);
+    if(r.ok){
+      var txt=await r.text();
+      var lines=txt.trim().split('\n').slice(1);
+      var out=lines.slice(-lim).map(l=>{var p=l.split(',');return{d:p[0].trim(),v:parseFloat(p[1])}}).filter(x=>x.d&&!isNaN(x.v));
+      if(out.length>=2)return out;
+    }
+  }catch(e){}
+  return null;
 }
 
 // ── FED ──────────────────────────────────────────────────────────
@@ -509,26 +503,23 @@ async function loadVix(btn){
   var c=await fC('^VIX',35);
   var ok=!!(c&&c.length>=2);
   if(ok)rVix(c[c.length-1],c[c.length-2],VR.v3m,c.slice(-30),false);
-  // Fetch put/call from CBOE via proxy
+  // Fetch put/call ratio from Yahoo Finance options chain (CORS-friendly)
   var pcDone=false;
   try{
-    var pcUrl='https://www.cboe.com/publish/scheduledtask/mktdata/cboestoxx/daily_put_call_ratios.csv';
-    var r=await tF('https://api.allorigins.win/raw?url='+encodeURIComponent(pcUrl),10000);
-    if(r.ok){var txt=await r.text(),lines=txt.trim().split('\n').filter(l=>l.trim());
-      if(lines.length>=3){var last=lines[lines.length-1].split(','),prev2=lines[lines.length-2].split(',');
-        var pv=parseFloat(last[2]),pp=parseFloat(prev2[2]);
-        if(!isNaN(pv)&&pv>0){rPC(pv,pp,false);pcDone=true;}}}
+    // Use SPY options chain — total puts/calls gives market put/call ratio
+    var r=await tF('https://query1.finance.yahoo.com/v7/finance/options/SPY',10000);
+    if(r.ok){
+      var j=await r.json();
+      var chain=j.optionChain.result[0];
+      var calls=chain.options[0].calls.length;
+      var puts=chain.options[0].puts.length;
+      if(calls>0){
+        var ratio=puts/calls;
+        rPC(parseFloat(ratio.toFixed(2)),PCR.prev,false);
+        pcDone=true;
+      }
+    }
   }catch(e){}
-  if(!pcDone){
-    try{
-      var pcUrl2='https://www.cboe.com/publish/scheduledtask/mktdata/cboestoxx/total_put_call_ratio.csv';
-      var r2=await tF('https://corsproxy.io/?'+encodeURIComponent(pcUrl2),10000);
-      if(r2.ok){var txt2=await r2.text(),lines2=txt2.trim().split('\n').filter(l=>l.trim());
-        if(lines2.length>=3){var l2=lines2[lines2.length-1].split(','),p2=lines2[lines2.length-2].split(',');
-          var v2=parseFloat(l2[1])||parseFloat(l2[2]),p2v=parseFloat(p2[1])||parseFloat(p2[2]);
-          if(!isNaN(v2)&&v2>0){rPC(v2,p2v,false);pcDone=true;}}}
-    }catch(e){}
-  }
   if(!pcDone)rPC(PCR.val,PCR.prev,true);
   btnDone(btn,ok);
 }
