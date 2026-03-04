@@ -27,7 +27,7 @@
   <div class="card" id="card-ff"><div class="chdr"><div class="clbl">Fed Funds Rate</div><span class="badge bo" id="f-ffb">—</span></div><div class="val" id="f-ff">—</div></div>
   <div class="card"><div class="clbl">Balance Sheet Trend</div><svg class="sp" id="bss" viewBox="0 0 300 46"></svg></div>
   <div class="rts" id="f-ts"></div>
-  <button class="rbtn" onclick="loadFed()">⟳ Refresh Fed Data</button>
+  <button class="rbtn" onclick="loadFed(this)">⟳ Refresh Fed Data</button>
 </div>
 
 <!-- SPREADS TAB -->
@@ -61,7 +61,7 @@
   </div>
   <div class="note">Tighter spreads = healthier liquidity. Widening is an early warning signal. Bond vol (MOVE) often leads equity vol (VIX).</div>
   <div class="rts" id="spreads-ts"></div>
-  <button class="rbtn" onclick="loadSpreads()">⟳ Refresh Spreads</button>
+  <button class="rbtn" onclick="loadSpreads(this)">⟳ Refresh Spreads</button>
 </div>
 
 <!-- VIX TAB -->
@@ -85,7 +85,7 @@
   <div class="card"><div class="clbl">30-Day History</div><svg class="sp" id="vsp" viewBox="0 0 300 46"></svg></div>
   <div class="note">VIX &lt;15 complacency · 15-25 normal · 25-35 fear · &gt;35 panic<br>Put/Call &gt;1.2 = fear · 0.7-1.0 = neutral · &lt;0.7 = greed</div>
   <div class="rts" id="v-ts"></div>
-  <button class="rbtn" onclick="loadVix()">⟳ Refresh VIX</button>
+  <button class="rbtn" onclick="loadVix(this)">⟳ Refresh VIX</button>
 </div>
 
 <!-- MACRO TAB -->
@@ -113,7 +113,7 @@
     <div id="sec-r"></div>
   </div>
   <div class="rts" id="mac-ts"></div>
-  <button class="rbtn" onclick="loadMacro()">⟳ Refresh Macro</button>
+  <button class="rbtn" onclick="loadMacro(this)">⟳ Refresh Macro</button>
 </div>
 
 <!-- WATCHLIST TAB -->
@@ -128,7 +128,7 @@
   <div id="wl-e" class="note">No stocks yet. Add tickers above.</div>
   <div id="wl-r"></div>
   <div class="rts" id="wl-ts"></div>
-  <button class="rbtn" onclick="refWL()">⟳ Refresh Watchlist</button>
+  <button class="rbtn" onclick="refWL(this)">⟳ Refresh Watchlist</button>
 </div>
 
 <!-- BREAKOUTS TAB -->
@@ -157,7 +157,7 @@
     <div id="sc-lr"></div>
   </div>
   <div class="rts" id="sc-ts"></div>
-  <button class="rbtn" onclick="runScan()">⟳ Re-scan</button>
+  <button class="rbtn" onclick="runScan(this)">⟳ Re-scan</button>
 </div>
 
 <!-- FEAR/GREED TAB -->
@@ -259,10 +259,20 @@ function spark(id,data,col){
   s.innerHTML=`<defs><linearGradient id="${gi}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${col}" stop-opacity=".35"/><stop offset="100%" stop-color="${col}" stop-opacity=".02"/></linearGradient></defs><path d="${ar}" fill="url(#${gi})"/><polyline points="${ln}" fill="none" stroke="${col}" stroke-width="1.8" stroke-linejoin="round"/><circle cx="${pts[pts.length-1][0].toFixed(1)}" cy="${pts[pts.length-1][1].toFixed(1)}" r="3.5" fill="${col}"/>`;
 }
 
-function tF(url,ms=12000){
-  var c=new AbortController(),t=setTimeout(()=>c.abort(),ms);
-  return fetch(url,{signal:c.signal}).then(r=>{clearTimeout(t);return r});
+// ── Safari-safe fetch with timeout ──────────────────────────────
+function tF(url,ms=14000){
+  return new Promise((resolve,reject)=>{
+    var done=false;
+    var tid=setTimeout(()=>{if(!done){done=true;reject(new Error('timeout'))}},ms);
+    fetch(url,{mode:'cors',cache:'no-store',credentials:'omit'})
+      .then(r=>{if(!done){done=true;clearTimeout(tid);resolve(r)}})
+      .catch(e=>{if(!done){done=true;clearTimeout(tid);reject(e)}});
+  });
 }
+
+// Button loading state helpers
+function btnLoad(el){if(!el)return;el._orig=el.textContent;el.textContent='⟳ Loading…';el.disabled=true;el.style.opacity='0.6'}
+function btnDone(el,ok){if(!el)return;el.textContent=ok?'✓ '+el._orig:el._orig;el.disabled=false;el.style.opacity='';setTimeout(()=>{if(el&&el.textContent.startsWith('✓'))el.textContent=el._orig},2000)}
 
 function toSq(s){
   var m={SPY:'SPY.US',QQQ:'QQQ.US',IWM:'IWM.US',HYG:'HYG.US',LQD:'LQD.US',TLT:'TLT.US',
@@ -273,43 +283,58 @@ function toSq(s){
 
 function pSq(t){
   if(!t||t.indexOf(',')<0)return null;
-  // Returns array of {c,v} objects (close, volume)
   var lines=t.trim().split('\n').slice(1);
   var out=lines.map(l=>{var p=l.split(',');var c=parseFloat(p[4]),v=parseFloat(p[5]);return{c,v}}).filter(x=>x.c>0&&!isNaN(x.c));
   out.reverse();
   return out.length?out:null;
 }
 
-function pSqClose(t){
-  var d=pSq(t);return d?d.map(x=>x.c):null;
+function pSqClose(t){var d=pSq(t);return d?d.map(x=>x.c):null;}
+
+// Try each proxy in sequence; return first success
+async function tryProxies(urls,parser,minLen=5){
+  for(var url of urls){
+    try{
+      var r=await tF(url,13000);
+      if(!r.ok)continue;
+      var txt=await r.text();
+      var res=parser(txt);
+      if(res&&res.length>=minLen)return res;
+    }catch(e){}
+  }
+  return null;
 }
 
 async function fC(sym,days=400,withVol=false){
   var s=toSq(sym),en=new Date(),st=new Date(+en-days*86400000);
   var df=d=>d.toISOString().slice(0,10).replace(/-/g,'');
   var sq=`https://stooq.com/q/d/l/?s=${encodeURIComponent(s)}&d1=${df(st)}&d2=${df(en)}&i=d`;
-  var proxies=[
-    async()=>{var r=await tF(sq,10000);if(!r.ok)throw 0;return pSq(await r.text())},
-    async()=>{var r=await tF('https://api.allorigins.win/raw?url='+encodeURIComponent(sq));if(!r.ok)throw 0;return pSq(await r.text())},
+  // Proxy list — allorigins tends to work on Safari iOS, corsproxy as backup
+  var urls=[
+    'https://api.allorigins.win/raw?url='+encodeURIComponent(sq),
+    'https://corsproxy.io/?'+encodeURIComponent(sq),
+    'https://thingproxy.freeboard.io/fetch/'+sq,
   ];
-  for(var i=0;i<proxies.length;i++){
-    try{var res=await proxies[i]();if(res&&res.length>=5){return withVol?res:res.map(x=>x.c)}}catch(e){}
-  }
+  // Also try direct (works on some networks)
+  try{var dr=await tF(sq,8000);if(dr.ok){var dt=await dr.text();var dd=pSq(dt);if(dd&&dd.length>=5)return withVol?dd:dd.map(x=>x.c)}}catch(e){}
+  var res=await tryProxies(urls,pSq);
+  if(res)return withVol?res:res.map(x=>x.c);
   return null;
 }
 
 async function fFred(id,lim=20){
   var url=`https://fred.stlouisfed.org/graph/fredgraph.csv?id=${id}`;
-  var px=['https://api.allorigins.win/raw?url=','https://corsproxy.io/?'];
-  for(var p of px){
-    try{
-      var r=await tF(p+encodeURIComponent(url));if(!r.ok)continue;
-      var t=await r.text(),lines=t.trim().split('\n').slice(1);
-      var out=lines.slice(-lim).map(l=>{var p=l.split(',');return{d:p[0].trim(),v:parseFloat(p[1])}}).filter(x=>x.d&&!isNaN(x.v));
-      if(out.length)return out;
-    }catch(e){}
-  }
-  return null;
+  var parser=txt=>{
+    var lines=txt.trim().split('\n').slice(1);
+    var out=lines.slice(-lim).map(l=>{var p=l.split(',');return{d:p[0].trim(),v:parseFloat(p[1])}}).filter(x=>x.d&&!isNaN(x.v));
+    return out.length?out:null;
+  };
+  var urls=[
+    'https://api.allorigins.win/raw?url='+encodeURIComponent(url),
+    'https://corsproxy.io/?'+encodeURIComponent(url),
+    'https://thingproxy.freeboard.io/fetch/'+url,
+  ];
+  return tryProxies(urls,parser,2);
 }
 
 // ── FED ──────────────────────────────────────────────────────────
@@ -334,16 +359,20 @@ function rFed(walcl,rrp,tga,ff,fb){
   compFG();
 }
 
-async function loadFed(){
+async function loadFed(btn){
+  btnLoad(btn);
   rFed(FED.walcl,FED.rrp,FED.tga,FED.ff,true);
   var[w,r,t,f]=await Promise.all([fFred('WALCL',20),fFred('RRPONTSYD',5),fFred('WTREGEN',5),fFred('DFF',5)]);
-  if(w&&r){var wl=w.map(x=>({d:x.d,v:x.v/1000}));rFed(wl,r[r.length-1].v,t?t[t.length-1].v:FED.tga,f?f[f.length-1].v:FED.ff,false)}
+  var ok=!!(w&&r);
+  if(ok){var wl=w.map(x=>({d:x.d,v:x.v/1000}));rFed(wl,r[r.length-1].v,t?t[t.length-1].v:FED.tga,f?f[f.length-1].v:FED.ff,false)}
+  btnDone(btn,ok);
 }
 
 // ── CREDIT SPREADS + MOVE ────────────────────────────────────────
 // Estimate HY spread: HYG yield proxy vs TLT. Real approach: use ETF price changes as proxy.
 // We fetch HYG and LQD and compute 30d return spread vs TLT as a proxy for spread direction.
-async function loadSpreads(){
+async function loadSpreads(btn){
+  btnLoad(btn);
   rEqS();
   loadCrypto();
 
@@ -380,6 +409,7 @@ async function loadSpreads(){
   }else{rMove(CR.move,CR.move,null,true)}
 
   sv('spreads-ts','Updated '+ts());
+  btnDone(btn,live);
 }
 
 function rCreditSpreads(hy,ig,extra,isRef){
@@ -472,30 +502,35 @@ function rPC(val,prev,isRef){
   compFG();
 }
 
-async function loadVix(){
+async function loadVix(btn){
+  btnLoad(btn);
   rVix(VR.cur,VR.prev,VR.v3m,null,true);
   rPC(PCR.val,PCR.prev,true);
   var c=await fC('^VIX',35);
-  if(c&&c.length>=2)rVix(c[c.length-1],c[c.length-2],VR.v3m,c.slice(-30),false);
+  var ok=!!(c&&c.length>=2);
+  if(ok)rVix(c[c.length-1],c[c.length-2],VR.v3m,c.slice(-30),false);
   // Fetch put/call from CBOE via proxy
+  var pcDone=false;
   try{
     var pcUrl='https://www.cboe.com/publish/scheduledtask/mktdata/cboestoxx/daily_put_call_ratios.csv';
-    var r=await tF('https://api.allorigins.win/raw?url='+encodeURIComponent(pcUrl),8000);
+    var r=await tF('https://api.allorigins.win/raw?url='+encodeURIComponent(pcUrl),10000);
     if(r.ok){var txt=await r.text(),lines=txt.trim().split('\n').filter(l=>l.trim());
       if(lines.length>=3){var last=lines[lines.length-1].split(','),prev2=lines[lines.length-2].split(',');
         var pv=parseFloat(last[2]),pp=parseFloat(prev2[2]);
-        if(!isNaN(pv)&&pv>0){rPC(pv,pp,false);return}}}
+        if(!isNaN(pv)&&pv>0){rPC(pv,pp,false);pcDone=true;}}}
   }catch(e){}
-  // Fallback: equity put/call
-  try{
-    var pcUrl2='https://www.cboe.com/publish/scheduledtask/mktdata/cboestoxx/total_put_call_ratio.csv';
-    var r2=await tF('https://corsproxy.io/?'+encodeURIComponent(pcUrl2),8000);
-    if(r2.ok){var txt2=await r2.text(),lines2=txt2.trim().split('\n').filter(l=>l.trim());
-      if(lines2.length>=3){var l2=lines2[lines2.length-1].split(','),p2=lines2[lines2.length-2].split(',');
-        var v2=parseFloat(l2[1])||parseFloat(l2[2]),p2v=parseFloat(p2[1])||parseFloat(p2[2]);
-        if(!isNaN(v2)&&v2>0){rPC(v2,p2v,false);return}}}
-  }catch(e){}
-  rPC(PCR.val,PCR.prev,true);
+  if(!pcDone){
+    try{
+      var pcUrl2='https://www.cboe.com/publish/scheduledtask/mktdata/cboestoxx/total_put_call_ratio.csv';
+      var r2=await tF('https://corsproxy.io/?'+encodeURIComponent(pcUrl2),10000);
+      if(r2.ok){var txt2=await r2.text(),lines2=txt2.trim().split('\n').filter(l=>l.trim());
+        if(lines2.length>=3){var l2=lines2[lines2.length-1].split(','),p2=lines2[lines2.length-2].split(',');
+          var v2=parseFloat(l2[1])||parseFloat(l2[2]),p2v=parseFloat(p2[1])||parseFloat(p2[2]);
+          if(!isNaN(v2)&&v2>0){rPC(v2,p2v,false);pcDone=true;}}}
+    }catch(e){}
+  }
+  if(!pcDone)rPC(PCR.val,PCR.prev,true);
+  btnDone(btn,ok);
 }
 
 // ── MACRO ────────────────────────────────────────────────────────
@@ -533,7 +568,8 @@ function rDXY(c){
 function rSecs(data){
   $('sec-r').innerHTML=(data||SECS).map(s=>{var c=s.rs>1?'#00e599':s.rs>0?'#ffd93d':s.rs>-1?'#ff9500':'#ff3b5c',w=Math.min(100,Math.abs(s.rs)/3*100);return`<div class="brow"><div class="blbl" style="font-size:9px">${s.n}</div><div class="btrk"><div class="bfil" style="width:${w}%;background:${c}"></div></div><div class="bval" style="color:${c};font-size:10px">${s.rs>=0?'+':''}${fmt(s.rs,1)}%</div></div>`;}).join('');
 }
-async function loadMacro(){
+async function loadMacro(btn){
+  btnLoad(btn);
   rYC(MR.y2,MR.y10);rMom(null,null);rDXY(null);rSecs(null);
   var syms=['^TNX','SPY','QQQ','DX-Y.NYB','XLK','XLY','XLI','XLF','XLE','XLV','XLP','XLU'];
   var res=await Promise.allSettled(syms.map(s=>fC(s,400)));
@@ -551,6 +587,7 @@ async function loadMacro(){
     rSecs(sd);
   }
   sv('mac-ts','Updated '+ts());compFG();
+  btnDone(btn,!!(D['SPY']));
 }
 
 // ── WATCHLIST ────────────────────────────────────────────────────
@@ -559,14 +596,16 @@ function lWL(){try{WL=JSON.parse(localStorage.getItem('liq_wl')||'[]')}catch(e){
 function sWL(){try{localStorage.setItem('liq_wl',JSON.stringify(WL))}catch(e){}}
 function addWL(){var inp=$('wi');if(!inp)return;var v=inp.value.trim().toUpperCase().replace(/[^A-Z0-9.\-]/g,'');if(!v||WL.indexOf(v)>=0||WL.length>=20)return;WL.push(v);sWL();inp.value='';refWL()}
 function rmWL(t){WL=WL.filter(x=>x!==t);sWL();refWL()}
-async function refWL(){
+async function refWL(btn){
   var e=$('wl-e'),r=$('wl-r');
   if(!WL.length){if(e)e.style.display='block';if(r)r.innerHTML='';return}
+  btnLoad(btn);
   if(e)e.style.display='none';
   if(r)r.innerHTML='<div style="font-size:10px;color:var(--mt);text-align:center;padding:14px">Loading…</div>';
   var res=await Promise.allSettled(WL.map(t=>fC(t,400,true)));
   if(r)r.innerHTML=WL.map((t,i)=>wCard(t,res[i].value)).join('');
   sv('wl-ts','Updated '+ts());
+  btnDone(btn,true);
 }
 function wCard(tk,raw){
   var c=raw?raw.map(x=>typeof x==='object'?x.c:x):null;
@@ -608,8 +647,9 @@ var UNI=[
   'SPY','QQQ','IWM','TLT','GLD','SLV'
 ];
 
-async function runScan(){
+async function runScan(btn){
   var sb=$('sc-b');if(sb){sb.textContent='SCANNING';sb.className='badge bl'}
+  btnLoad(btn);
   sv('sc-h','…');sv('sc-l','…');sv('sc-vh','…');sv('sc-tot','…');
   var all=[];
   for(var i=0;i<UNI.length;i+=6){
@@ -661,6 +701,7 @@ async function runScan(){
   if(hr)hr.innerHTML=hi.length?hi.map(s=>sRow(s,'h')).join(''):'<div style="font-size:10px;color:var(--mt);text-align:center;padding:10px">None found</div>';
   if(lr)lr.innerHTML=lo.length?lo.slice(0,10).map(s=>sRow(s,'l')).join(''):'<div style="font-size:10px;color:var(--mt);text-align:center;padding:10px">None found</div>';
   sv('sc-ts','Updated '+ts());
+  btnDone(btn,hi.length>0||lo.length>0);
 }
 
 // ── FEAR/GREED (8 components) ─────────────────────────────────────
