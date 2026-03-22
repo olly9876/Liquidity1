@@ -1,7 +1,7 @@
 <!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="apple-mobile-web-app-capable" content="yes"><title>LIQUIDITY</title><link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Bebas+Neue&display=swap" rel="stylesheet"><style>:root{--bg:#050810;--s1:#0c1220;--s2:#111927;--bd:#1e2d42;--ac:#00d4ff;--ac2:#ff6b35;--ac4:#a855f7;--warn:#ffd93d;--red:#ff3b5c;--grn:#00e599;--tx:#e8edf5;--mt:#5a7080;--dim:#2a3d52}*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}body{background:var(--bg);color:var(--tx);font-family:'DM Mono',monospace;min-height:100vh;overflow-x:hidden}header{padding:12px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--bd);background:rgba(5,8,16,.97);position:sticky;top:0;z-index:100}.logo{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:4px;color:var(--ac)}.dot{width:7px;height:7px;border-radius:50%;background:var(--grn);animation:pulse 2s infinite;display:inline-block;margin-right:6px}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}.nav{display:flex;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;border-bottom:1px solid var(--bd);background:rgba(12,18,32,.98);position:sticky;top:45px;z-index:99}.nav::-webkit-scrollbar{display:none}.nb{flex:none;padding:10px 14px;font-family:'DM Mono',monospace;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--mt);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;white-space:nowrap}.nb.active{color:var(--ac);border-bottom-color:var(--ac)}.tab{padding:14px;display:none;padding-bottom:50px}.tab.active{display:block}.sec{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:3px;margin-bottom:10px}.card{background:var(--s1);border:1px solid var(--bd);border-radius:10px;padding:13px;margin-bottom:9px}.card.stale-warn{border-color:rgba(255,217,61,.4)}.card.stale-old{border-color:rgba(255,59,92,.35)}.clbl{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--mt);margin-bottom:6px}.chdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.val{font-family:'Bebas Neue',sans-serif;font-size:34px;line-height:1}.sub{font-size:10px;color:var(--mt);margin-top:3px}.dlt{font-size:11px;margin-top:4px}.up{color:var(--grn)}.dn{color:var(--red)}.neut{color:var(--warn)}.g2{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:9px}.badge{font-size:9px;padding:3px 9px;border-radius:10px;letter-spacing:1px}.bl{background:rgba(0,229,153,.12);color:var(--grn);border:1px solid rgba(0,229,153,.3)}.br{background:rgba(255,217,61,.12);color:var(--warn);border:1px solid rgba(255,217,61,.3)}.bo{background:rgba(0,212,255,.1);color:var(--ac);border:1px solid rgba(0,212,255,.2)}.brd{background:rgba(255,59,92,.1);color:var(--red);border:1px solid rgba(255,59,92,.3)}.note{background:rgba(0,212,255,.05);border:1px solid rgba(0,212,255,.15);border-radius:8px;padding:10px 12px;font-size:10px;color:var(--mt);line-height:1.6;margin-bottom:9px}.rnote{background:rgba(255,217,61,.06);border:1px solid rgba(255,217,61,.2);border-radius:8px;padding:8px 12px;font-size:10px;color:var(--warn);margin-bottom:9px;line-height:1.5}.brow{display:flex;align-items:center;gap:7px;margin-bottom:8px}.blbl{font-size:10px;width:90px;flex-shrink:0;color:var(--mt)}.btrk{flex:1;height:6px;background:var(--dim);border-radius:3px;overflow:hidden}.bfil{height:100%;border-radius:3px}.bval{font-size:10px;width:55px;text-align:right;flex-shrink:0}.pill{display:inline-block;font-size:9px;padding:2px 8px;border-radius:10px;margin:2px}.pu{background:rgba(0,229,153,.12);color:var(--grn)}.pd{background:rgba(255,59,92,.1);color:var(--red)}.pp{background:rgba(168,85,247,.1);color:var(--ac4)}.pb{background:rgba(0,229,153,.12);color:var(--grn);border:1px solid rgba(0,229,153,.3)}.rbtn{display:block;width:100%;padding:11px;background:var(--s2);border:1px solid var(--bd);border-radius:9px;color:var(--ac);font-family:'DM Mono',monospace;font-size:11px;cursor:pointer;margin-top:6px;letter-spacing:1px}.rts{font-size:9px;color:var(--mt);text-align:right;margin:4px 0}.age{font-size:9px;font-family:'DM Mono',monospace;padding:2px 7px;border-radius:8px;margin-left:6px}.age-live{background:rgba(0,229,153,.12);color:var(--grn)}.age-warn{background:rgba(255,217,61,.12);color:var(--warn)}.age-old{background:rgba(255,59,92,.1);color:var(--red)}.sp{width:100%;height:46px}.wi{width:100%;background:var(--s2);border:1px solid var(--bd);border-radius:7px;padding:10px 12px;color:var(--tx);font-family:'DM Mono',monospace;font-size:12px;outline:none;-webkit-appearance:none}.ab{background:var(--ac);color:#050810;border:none;border-radius:7px;padding:10px 20px;font-family:'DM Mono',monospace;font-size:11px;font-weight:600;cursor:pointer}.rng{height:6px;background:var(--dim);border-radius:3px;position:relative;margin:6px 0}.rnf{height:100%;border-radius:3px;background:linear-gradient(90deg,#ff3b5c,#ffd93d,#00e599)}.rnt{position:absolute;top:-4px;width:2px;height:14px;background:white;border-radius:1px;transform:translateX(-50%)}.rmv{background:rgba(255,59,92,.1);border:1px solid rgba(255,59,92,.25);color:var(--red);border-radius:5px;padding:3px 8px;font-size:10px;cursor:pointer;font-family:'DM Mono',monospace}.vol-badge{display:inline-block;font-size:9px;padding:2px 8px;border-radius:8px;margin-left:6px}.vol-high{background:rgba(0,229,153,.15);color:var(--grn);border:1px solid rgba(0,229,153,.3)}.vol-norm{background:rgba(90,112,128,.15);color:var(--mt);border:1px solid rgba(90,112,128,.3)}</style></head><body>
 <header><div class="logo">LIQUIDITY</div><div style="display:flex;align-items:center;gap:6px"><span class="dot"></span><span style="font-size:9px;color:var(--mt)" id="hdr-t"></span></div></header>
 <nav class="nav">
-  <button class="nb active" onclick="ST('fed',this)">🏦 Fed</button>
+  <button class="nb active" onclick="ST('commod',this)">🛢️ Commod</button>
   <button class="nb" onclick="ST('spreads',this)">📊 Spreads</button>
   <button class="nb" onclick="ST('vix',this)">⚡ VIX</button>
   <button class="nb" onclick="ST('macro',this)">🌐 Macro</button>
@@ -10,22 +10,60 @@
   <button class="nb" onclick="ST('fg',this)">🎯 F/G</button>
 </nav>
 
-<!-- FED TAB -->
-<div class="tab active" id="tab-fed">
-  <div class="sec">Fed Liquidity</div>
-  <div id="fed-w"></div>
+<!-- COMMODITIES TAB -->
+<div class="tab active" id="tab-commod">
+  <div class="sec">Commodities</div>
   <div class="g2">
-    <div class="card" id="card-bs"><div class="clbl">Balance Sheet</div><div class="val" id="f-bs">—</div><div class="sub" id="f-bss"></div><div class="dlt" id="f-bsd"></div></div>
-    <div class="card" id="card-nl"><div class="clbl">Net Liquidity</div><div class="val" id="f-nl">—</div><div class="sub">BS−RRP−TGA</div><div class="dlt" id="f-nld"></div></div>
+    <div class="card" id="card-gold">
+      <div class="clbl">Gold</div>
+      <div class="val" id="c-gold">—</div>
+      <div class="dlt" id="c-goldd"></div>
+      <svg class="sp" id="sp-gold" viewBox="0 0 300 46" style="margin-top:6px"></svg>
+    </div>
+    <div class="card" id="card-silver">
+      <div class="clbl">Silver</div>
+      <div class="val" id="c-silver">—</div>
+      <div class="dlt" id="c-silverd"></div>
+      <svg class="sp" id="sp-silver" viewBox="0 0 300 46" style="margin-top:6px"></svg>
+    </div>
   </div>
   <div class="g2">
-    <div class="card" id="card-rrp"><div class="clbl">RRP</div><div class="val" id="f-rrp">—</div><div class="sub" id="f-rrps"></div></div>
-    <div class="card" id="card-tga"><div class="clbl">TGA</div><div class="val" id="f-tga">—</div><div class="sub">Treasury cash</div></div>
+    <div class="card" id="card-wti">
+      <div class="clbl">WTI Crude</div>
+      <div class="val" id="c-wti">—</div>
+      <div class="dlt" id="c-wtid"></div>
+      <svg class="sp" id="sp-wti" viewBox="0 0 300 46" style="margin-top:6px"></svg>
+    </div>
+    <div class="card" id="card-brent">
+      <div class="clbl">Brent Crude</div>
+      <div class="val" id="c-brent">—</div>
+      <div class="dlt" id="c-brentd"></div>
+      <svg class="sp" id="sp-brent" viewBox="0 0 300 46" style="margin-top:6px"></svg>
+    </div>
   </div>
-  <div class="card" id="card-ff"><div class="chdr"><div class="clbl">Fed Funds Rate</div><span class="badge bo" id="f-ffb">—</span></div><div class="val" id="f-ff">—</div></div>
-  <div class="card"><div class="clbl">Balance Sheet Trend</div><svg class="sp" id="bss" viewBox="0 0 300 46"></svg></div>
-  <div class="rts" id="f-ts"></div>
-  <button class="rbtn" onclick="loadFed(this)">⟳ Refresh Fed Data</button>
+  <div class="g2">
+    <div class="card" id="card-ng">
+      <div class="clbl">Natural Gas</div>
+      <div class="val" id="c-ng">—</div>
+      <div class="dlt" id="c-ngd"></div>
+    </div>
+    <div class="card" id="card-copper">
+      <div class="clbl">Copper</div>
+      <div class="val" id="c-copper">—</div>
+      <div class="dlt" id="c-copperd"></div>
+    </div>
+  </div>
+  <div class="card" id="card-gsratio">
+    <div class="chdr">
+      <div class="clbl">Gold / Silver Ratio</div>
+      <span class="badge" id="gsr-b">—</span>
+    </div>
+    <div class="val" id="c-gsr">—</div>
+    <div style="font-size:10px;color:var(--mt);margin-top:4px" id="c-gsri"></div>
+  </div>
+  <div class="note">Gold rising with equities = risk-on. Gold rising with bonds = risk-off/fear. Oil is a leading inflation indicator. High G/S ratio = risk-off.</div>
+  <div class="rts" id="commod-ts"></div>
+  <button class="rbtn" onclick="loadCommod(this)">⟳ Refresh Commodities</button>
 </div>
 
 <!-- SPREADS TAB -->
@@ -99,9 +137,15 @@
     <div class="chdr"><div class="clbl">SPY / QQQ Momentum</div><span class="badge" id="m-b">—</span></div>
     <div id="m-r"></div>
   </div>
-  <div class="card" id="card-dxy">
-    <div class="chdr"><div class="clbl">DXY Dollar Index</div><span class="badge" id="dx-b">—</span></div>
-    <div class="val" id="dx-v">—</div><div class="dlt" id="dx-d"></div>
+  <div class="g2">
+    <div class="card" id="card-dxy">
+      <div class="chdr"><div class="clbl">DXY Dollar Index</div><span class="badge" id="dx-b">—</span></div>
+      <div class="val" id="dx-v">—</div><div class="dlt" id="dx-d"></div>
+    </div>
+    <div class="card" id="card-gbp">
+      <div class="chdr"><div class="clbl">GBP / USD</div><span class="badge" id="gbp-b">—</span></div>
+      <div class="val" id="gbp-v">—</div><div class="dlt" id="gbp-d"></div>
+    </div>
   </div>
   <div class="card">
     <div class="clbl">Sector Rotation vs SPY (1M)</div>
@@ -323,34 +367,65 @@ async function fFred(id,lim=20){
   }catch(e){return null;}
 }
 
-// ── FED ──────────────────────────────────────────────────────────
-function rFed(walcl,rrp,tga,ff,fb){
-  var bs=walcl[walcl.length-1].v,bp=walcl.length>1?walcl[walcl.length-2].v:bs;
-  var nl=bs-rrp/1000-tga/1000,bc=(bs-bp)/bp*100;
-  sv('f-bs',fmt(bs,2)+'T');sv('f-bss','Week of '+walcl[walcl.length-1].d);
-  var bde=$('f-bsd');if(bde){bde.textContent=(bc>=0?'▲ +':'▼ ')+fmt(Math.abs(bc))+'%';bde.className='dlt '+(bc>=0?'up':'dn')}
-  sv('f-rrp',fmtB(rrp));sv('f-rrps',rrp<100?'Near zero — bullish':'Draining...');
-  sv('f-tga',fmtB(tga));
-  sv('f-nl',fmt(nl,2)+'T');
-  var nle=$('f-nld');if(nle){nle.textContent=nl>4?'▲ Elevated':nl<3?'▼ Tight':'■ Neutral';nle.className='dlt '+(nl>4?'up':nl<3?'dn':'neut')}
-  sv('f-ff',fmt(ff,3)+'%');
-  var ffb=$('f-ffb');if(ffb){ffb.textContent=ff<3?'EASY':ff<4.5?'NEUTRAL':'TIGHT';ffb.className='badge '+(ff<3?'bl':ff<4.5?'bo':'br')}
-  spark('bss',walcl.map(x=>x.v),'#00d4ff');
-  var fw=$('fed-w');if(fw)fw.innerHTML=fb?`<div class="rnote">⚠ Reference data (${AS_OF}). Tap Refresh for live data.</div>`:'';
-  ['card-bs','card-nl','card-rrp','card-tga','card-ff'].forEach(id=>setCardAge(id,'fed',fb));
-  if(!fb)markFresh('fed');
-  sv('f-ts','Updated '+ts());
-  window._fS=bc>0.01?'bull':bc<-0.01?'bear':'neut';
-  window._rS=rrp<100?'bull':rrp<500?'neut':'bear';
-  compFG();
+// ── COMMODITIES ───────────────────────────────────────────────────
+var COMMOD_REF={gold:2858,silver:31.8,wti:69.4,brent:72.8,ng:3.8,copper:4.42};
+
+function rCommodCard(valId,dltId,cardId,spId,cur,prev,prefix,decimals,hist,col){
+  sv(valId,(prefix||'')+fmt(cur,decimals));
+  var chg=cur-prev,chgP=chg/prev*100;
+  var de=$(dltId);
+  if(de){de.textContent=(chg>=0?'▲ +':'▼ ')+fmt(Math.abs(chgP),2)+'%';de.className='dlt '+(chg>=0?'up':'dn')}
+  if(hist&&spId)spark(spId,hist,col||'#ffd93d');
 }
 
-async function loadFed(btn){
+async function loadCommod(btn){
   btnLoad(btn);
-  rFed(FED.walcl,FED.rrp,FED.tga,FED.ff,true);
-  var[w,r,t,f]=await Promise.all([fFred('WALCL',20),fFred('RRPONTSYD',5),fFred('WTREGEN',5),fFred('DFF',5)]);
-  var ok=!!(w&&r);
-  if(ok){var wl=w.map(x=>({d:x.d,v:x.v/1000}));rFed(wl,r[r.length-1].v,t?t[t.length-1].v:FED.tga,f?f[f.length-1].v:FED.ff,false)}
+  // Show ref data immediately
+  rCommodCard('c-gold','c-goldd','card-gold','sp-gold',COMMOD_REF.gold,COMMOD_REF.gold*0.99,'$',0,null,'#ffd93d');
+  rCommodCard('c-silver','c-silverd','card-silver','sp-silver',COMMOD_REF.silver,COMMOD_REF.silver*0.99,'$',2,null,'#a0aec0');
+  rCommodCard('c-wti','c-wtid','card-wti','sp-wti',COMMOD_REF.wti,COMMOD_REF.wti*0.99,'$',2,null,'#ff6b35');
+  rCommodCard('c-brent','c-brentd','card-brent','sp-brent',COMMOD_REF.brent,COMMOD_REF.brent*0.99,'$',2,null,'#ff9500');
+  rCommodCard('c-ng','c-ngd','card-ng','sp-ng',COMMOD_REF.ng,COMMOD_REF.ng*0.99,'$',3,null,'#00d4ff');
+  rCommodCard('c-copper','c-copperd','card-copper','sp-copper',COMMOD_REF.copper,COMMOD_REF.copper*0.99,'$',3,null,'#ff6b35');
+
+  // Fetch live data — Yahoo Finance commodity tickers
+  var syms={'GC=F':'gold','SI=F':'silver','CL=F':'wti','BZ=F':'brent','NG=F':'ng','HG=F':'copper'};
+  var keys=Object.keys(syms);
+  var res=await Promise.allSettled(keys.map(k=>fC(k,60,false)));
+  var D={};keys.forEach((k,i)=>D[syms[k]]=res[i].value||null);
+
+  var cols={gold:'#ffd93d',silver:'#a0aec0',wti:'#ff6b35',brent:'#ff9500',ng:'#00d4ff',copper:'#e07b54'};
+  var pfx={gold:'$',silver:'$',wti:'$',brent:'$',ng:'$',copper:'$'};
+  var dec={gold:0,silver:2,wti:2,brent:2,ng:3,copper:3};
+  var ids={gold:['c-gold','c-goldd','card-gold','sp-gold'],silver:['c-silver','c-silverd','card-silver','sp-silver'],
+    wti:['c-wti','c-wtid','card-wti','sp-wti'],brent:['c-brent','c-brentd','card-brent','sp-brent'],
+    ng:['c-ng','c-ngd','card-ng',null],copper:['c-copper','c-copperd','card-copper',null]};
+
+  var ok=false;
+  Object.keys(D).forEach(name=>{
+    var c=D[name];if(!c||c.length<2)return;
+    var id=ids[name];
+    rCommodCard(id[0],id[1],id[2],id[3],c[c.length-1],c[c.length-2],pfx[name],dec[name],c.slice(-30),cols[name]);
+    ok=true;
+  });
+
+  // Gold/Silver ratio
+  var gld=D['gold'],slv=D['silver'];
+  if(gld&&gld.length>=1&&slv&&slv.length>=1){
+    var gsr=gld[gld.length-1]/slv[slv.length-1];
+    sv('c-gsr',fmt(gsr,1));
+    var gsrb=$('gsr-b');
+    var gsrLbl=gsr>90?'RISK OFF':gsr>80?'ELEVATED':gsr>70?'NEUTRAL':'RISK ON';
+    var gsrCol=gsr>90?'#ff3b5c':gsr>80?'#ffd93d':gsr>70?'#00d4ff':'#00e599';
+    if(gsrb){gsrb.textContent=gsrLbl;gsrb.className='badge';gsrb.style.cssText=`background:${gsrCol}22;color:${gsrCol};border:1px solid ${gsrCol}44`}
+    sv('c-gsri',gsr>90?'Very high ratio — strong risk-off signal. Historically bullish for future gold/silver returns.':gsr>80?'Elevated ratio — cautious sentiment. Watch for mean reversion in silver.':gsr>70?'Neutral range. Normal market conditions.':'Low ratio — risk-on. Silver outperforming gold.');
+    window._gsrS=gsr>85?'bear':gsr<70?'bull':'neut';
+    compFG();
+  }else{
+    sv('c-gsr',fmt(COMMOD_REF.gold/COMMOD_REF.silver,1));
+  }
+
+  sv('commod-ts','Updated '+ts());
   btnDone(btn,ok);
 }
 
@@ -548,19 +623,32 @@ function rDXY(c){
   setCardAge('card-dxy','dxy',false);markFresh('dxy');
   window._dS=cur<97?'bull':cur>103?'bear':'neut';
 }
+
+function rGBP(c){
+  if(!c||c.length<2){sv('gbp-v','1.2630');var d=$('gbp-d');if(d){d.textContent='Reference '+AS_OF;d.className='dlt neut'}return}
+  var cur=c[c.length-1],prev=c[c.length-2],chg=(cur-prev)/prev*100;
+  sv('gbp-v',fmt(cur,4));
+  var d=$('gbp-d');
+  if(d){d.textContent=(chg>=0?'▲ +':'▼ ')+fmt(Math.abs(chg),2)+'%';d.className='dlt '+(chg>=0?'up':'dn')}
+  var b=$('gbp-b');
+  if(b){b.textContent=cur>1.30?'GBP STRONG':cur>1.25?'NEUTRAL':'GBP WEAK';b.className='badge '+(cur>1.30?'bl':cur>1.25?'bo':'br')}
+  setCardAge('card-gbp','gbp',false);markFresh('gbp');
+  window._gbpS=cur>1.30?'bull':cur<1.20?'bear':'neut';
+  compFG();
+}
 function rSecs(data){
   $('sec-r').innerHTML=(data||SECS).map(s=>{var c=s.rs>1?'#00e599':s.rs>0?'#ffd93d':s.rs>-1?'#ff9500':'#ff3b5c',w=Math.min(100,Math.abs(s.rs)/3*100);return`<div class="brow"><div class="blbl" style="font-size:9px">${s.n}</div><div class="btrk"><div class="bfil" style="width:${w}%;background:${c}"></div></div><div class="bval" style="color:${c};font-size:10px">${s.rs>=0?'+':''}${fmt(s.rs,1)}%</div></div>`;}).join('');
 }
 async function loadMacro(btn){
   btnLoad(btn);
-  rYC(MR.y2,MR.y10);rMom(null,null);rDXY(null);rSecs(null);
-  var syms=['^TNX','SPY','QQQ','DX-Y.NYB','XLK','XLY','XLI','XLF','XLE','XLV','XLP','XLU'];
+  rYC(MR.y2,MR.y10);rMom(null,null);rDXY(null);rGBP(null);rSecs(null);
+  var syms=['^TNX','SPY','QQQ','DX-Y.NYB','GBPUSD=X','XLK','XLY','XLI','XLF','XLE','XLV','XLP','XLU'];
   var res=await Promise.allSettled(syms.map(s=>fC(s,400)));
   var D={};syms.forEach((s,i)=>D[s]=res[i].value||null);
   var y10=D['^TNX']?D['^TNX'][D['^TNX'].length-1]/10:MR.y10;
   var y2d=await fFred('DGS2',5),y2=y2d?y2d[y2d.length-1].v:MR.y2;
   markFresh('yc');markFresh('mom');
-  rYC(y2,y10);rMom(D['SPY'],D['QQQ']);rDXY(D['DX-Y.NYB']);
+  rYC(y2,y10);rMom(D['SPY'],D['QQQ']);rDXY(D['DX-Y.NYB']);rGBP(D['GBPUSD=X']);
   var spy=D['SPY'];
   if(spy&&spy.length>=22){
     var sr=(spy[spy.length-1]-spy[spy.length-22])/spy[spy.length-22]*100;
@@ -696,8 +784,8 @@ function compFG(){
     {n:'Put/Call',s:window._pcS||'neut',desc:'Options flow (contrarian)'},
     {n:'Momentum',s:window._mS||'neut',desc:'SPY/QQQ vs MAs'},
     {n:'Credit Sprd',s:window._csS||'neut',desc:'HY/IG spreads'},
-    {n:'Fed BS',s:window._fS||'neut',desc:'Balance sheet trend'},
-    {n:'RRP Level',s:window._rS||'neut',desc:'Reverse repo drain'},
+    {n:'Gold/Silver',s:window._gsrS||'neut',desc:'Risk-on/off ratio'},
+    {n:'GBP/USD',s:window._gbpS||'neut',desc:'Risk sentiment proxy'},
   ];
   var sc={bull:80,neut:50,bear:20};
   var score=Math.round(comps.reduce((sum,c)=>sum+sc[c.s],0)/comps.length);
@@ -718,26 +806,24 @@ function compFG(){
 
 // ── INIT ─────────────────────────────────────────────────────────
 rEqS();lWL();refWL();
-rYC(MR.y2,MR.y10);rMom(null,null);rDXY(null);rSecs(null);
+rYC(MR.y2,MR.y10);rMom(null,null);rDXY(null);rGBP(null);rSecs(null);
 rVix(VR.cur,VR.prev,VR.v3m,null,true);
 rPC(PCR.val,PCR.prev,true);
-rFed(FED.walcl,FED.rrp,FED.tga,FED.ff,true);
 rCreditSpreads(CR.hy,CR.ig,null,true);
 rMove(CR.move,CR.move,null,true);
-window._fS='bear';window._rS='bull';window._csS='neut';window._moveS='neut';window._pcS='neut';
+window._fS='neut';window._rS='neut';window._csS='neut';window._moveS='neut';window._pcS='neut';
 compFG();
-loadFed();loadSpreads();loadVix();loadMacro();runScan();
+loadCommod();loadSpreads();loadVix();loadMacro();runScan();
 
 // Refresh intervals
 setInterval(loadVix,60000);
+setInterval(loadCommod,180000);
 setInterval(loadSpreads,120000);
 setInterval(loadMacro,120000);
-setInterval(loadFed,300000);
 // Age badge refresh every 60s
 setInterval(()=>{
-  [['card-bs','fed'],['card-nl','fed'],['card-rrp','fed'],['card-tga','fed'],['card-ff','fed'],
-   ['card-cs','spreads-cs'],['card-move','spreads-move'],['card-vix','vix'],['card-vix3m','vix'],
-   ['card-pc','pc'],['card-yc','yc'],['card-mom','mom'],['card-dxy','dxy']].forEach(([cid,key])=>{
+  [['card-cs','spreads-cs'],['card-move','spreads-move'],['card-vix','vix'],['card-vix3m','vix'],
+   ['card-pc','pc'],['card-yc','yc'],['card-mom','mom'],['card-dxy','dxy'],['card-gbp','gbp']].forEach(([cid,key])=>{
     if(_fetchTimes[key])setCardAge(cid,key,false);
   });
 },60000);
