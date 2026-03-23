@@ -645,7 +645,7 @@ async function loadMacro(btn){
   var syms=['^TNX','SPY','QQQ','DX-Y.NYB','GBPUSD=X','XLK','XLY','XLI','XLF','XLE','XLV','XLP','XLU'];
   var res=await Promise.allSettled(syms.map(s=>fC(s,400)));
   var D={};syms.forEach((s,i)=>D[s]=res[i].value||null);
-  var y10=D['^TNX']?D['^TNX'][D['^TNX'].length-1]/10:MR.y10;
+  var y10=D['^TNX']?D['^TNX'][D['^TNX'].length-1]:MR.y10;
   var y2d=await fFred('DGS2',5),y2=y2d?y2d[y2d.length-1].v:MR.y2;
   markFresh('yc');markFresh('mom');
   rYC(y2,y10);rMom(D['SPY'],D['QQQ']);rDXY(D['DX-Y.NYB']);rGBP(D['GBPUSD=X']);
