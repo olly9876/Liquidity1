@@ -107,7 +107,7 @@
     <div class="card" id="card-vix3m"><div class="clbl">VIX3M</div><div class="val" id="v-3m">—</div><div class="sub">90-day implied</div></div>
   </div>
   <div class="card" id="card-pc">
-    <div class="chdr"><div class="clbl">Put/Call Ratio</div><span class="badge" id="pc-b">—</span></div>
+    <div class="chdr"><div class="clbl">VIX Term Structure</div><span class="badge" id="pc-b">—</span></div>
     <div class="val" id="pc-v">—</div>
     <div class="sub" id="pc-s"></div>
     <div style="font-size:10px;color:var(--mt);margin-top:5px" id="pc-i"></div>
@@ -117,7 +117,7 @@
     <div id="v-st" style="font-size:10px;color:var(--mt);margin-top:4px"></div>
   </div>
   <div class="card"><div class="clbl">30-Day History</div><svg class="sp" id="vsp" viewBox="0 0 300 46"></svg></div>
-  <div class="note">VIX &lt;15 complacency · 15-25 normal · 25-35 fear · &gt;35 panic<br>Put/Call &gt;1.2 = fear · 0.7-1.0 = neutral · &lt;0.7 = greed</div>
+  <div class="note">VIX &lt;15 complacency · 15-25 normal · 25-35 fear · &gt;35 panic<br>Term structure: VIX3M &gt; VIX = contango (normal) · VIX &gt; VIX3M = backwardation (stress)</div>
   <div class="rts" id="v-ts"></div>
   <button class="rbtn" onclick="loadVix(this)">⟳ Refresh VIX</button>
 </div>
@@ -126,9 +126,9 @@
 <div class="tab" id="tab-macro">
   <div class="sec">Macro</div>
   <div class="card" id="card-yc">
-    <div class="chdr"><div class="clbl">Yield Curve 2Y vs 10Y</div><span class="badge" id="yc-b">—</span></div>
+    <div class="chdr"><div class="clbl">Yield Curve 3M vs 10Y</div><span class="badge" id="yc-b">—</span></div>
     <div class="g2" style="margin-top:8px">
-      <div><div class="clbl">2-Year</div><div class="val" style="font-size:28px" id="yc-2">—</div></div>
+      <div><div class="clbl">3-Month</div><div class="val" style="font-size:28px" id="yc-2">—</div></div>
       <div><div class="clbl">10-Year</div><div class="val" style="font-size:28px" id="yc-10">—</div></div>
     </div>
     <div style="font-size:12px;margin-top:5px">Spread: <span id="yc-sp" style="color:var(--ac)">—</span></div>
@@ -272,7 +272,6 @@ var MR={y2:3.48,y10:4.08,dxy:97.6};
 // Credit spreads ref (bps) — HYG proxy for HY, LQD proxy for IG
 var CR={hy:325,ig:98,move:95};
 // Put/call ratio ref
-var PCR={val:0.92,prev:0.87};
 var SECS=[{n:'XLK Tech',rs:2.1},{n:'XLF Finance',rs:1.4},{n:'XLI Indust',rs:0.8},{n:'XLY Disc',rs:-0.3},{n:'XLV Health',rs:-0.7},{n:'XLE Energy',rs:-1.2},{n:'XLP Staples',rs:-1.8},{n:'XLU Util',rs:-2.1}];
 
 // ── Utilities ────────────────────────────────────────────────────
@@ -549,45 +548,33 @@ function rVix(cur,prev,v3m,hist,fb){
   compFG();
 }
 
-function rPC(val,prev,isRef){
-  sv('pc-v',val.toFixed(2));
-  var chg=val-prev,pcs=$('pc-s');
-  if(pcs){pcs.textContent=(chg>=0?'▲ +':'▼ ')+Math.abs(chg).toFixed(2)+' vs prev';pcs.className='sub '+(chg>=0?'dn':'up')}
-  var lbl=val>1.2?'EXTREME FEAR':val>1.0?'FEAR':val>0.85?'NEUTRAL':val>0.7?'GREED':'EXTREME GREED';
-  var col=val>1.0?'#ff3b5c':val>0.85?'#ffd93d':'#00e599';
-  var pb=$('pc-b');if(pb){pb.textContent=lbl;pb.className='badge';pb.style.cssText=`background:${col}22;color:${col};border:1px solid ${col}44`}
-  var pi=$('pc-i');if(pi)pi.textContent=val>1.2?'Heavy put buying — fear elevated. Contrarian bullish signal developing.':val>1.0?'Above-average puts. Caution warranted.':val>0.85?'Balanced options flow. Normal market conditions.':val>0.7?'Call-heavy flow. Watch for complacency.':'Extreme call buying. Potential contrarian warning.';
+function rPC(vix,vix3m,isRef){
+  var spread=vix3m-vix;
+  var ratio=vix>0?vix3m/vix:1;
+  sv('pc-v',fmt(ratio,2)+'×');
+  var pcs=$('pc-s');
+  if(pcs){pcs.textContent='VIX '+fmt(vix,1)+' · VIX3M '+fmt(vix3m,1);pcs.className='sub'}
+  var lbl=spread>5?'CONTANGO':spread>0?'MILD CONTANGO':spread>-3?'FLAT':spread>-8?'BACKWARDATION':'DEEP BACKWD';
+  var col=spread>0?'#00e599':spread>-3?'#ffd93d':'#ff3b5c';
+  var pb=$('pc-b');if(pb){pb.textContent=isRef?'REF':lbl;pb.className='badge';pb.style.cssText=`background:${col}22;color:${col};border:1px solid ${col}44`}
+  var pi=$('pc-i');if(pi)pi.textContent=spread>5?'Steep contango — normal conditions. Market expects vol to rise over time.':spread>0?'Mild contango — calm but watchful. Normal market structure.':spread>-3?'Flat curve — uncertainty rising. Watch for shift to backwardation.':spread>-8?'Backwardation — near-term fear elevated. Often signals bottoming process.':'Deep backwardation — acute stress. Historically strong contrarian buy signal.';
   setCardAge('card-pc','pc',isRef);
   if(!isRef)markFresh('pc');
-  window._pcS=val>1.0?'bull':val<0.7?'bear':'neut'; // contrarian: high PC = bullish
+  window._pcS=spread<-3?'bull':spread>3?'neut':'neut';
   compFG();
 }
 
 async function loadVix(btn){
   btnLoad(btn);
   rVix(VR.cur,VR.prev,VR.v3m,null,true);
-  rPC(PCR.val,PCR.prev,true);
-  var c=await fC('^VIX',35);
-  var ok=!!(c&&c.length>=2);
-  if(ok)rVix(c[c.length-1],c[c.length-2],VR.v3m,c.slice(-30),false);
-  // Fetch put/call ratio via proxy — SPY options chain
-  var pcDone=false;
-  try{
-    var optUrl='https://query1.finance.yahoo.com/v7/finance/options/SPY';
-    var r=await tF(PROXY+encodeURIComponent(optUrl),12000);
-    if(r.ok){
-      var j=await r.json();
-      var chain=j.optionChain.result[0];
-      var calls=chain.options[0].calls.length;
-      var puts=chain.options[0].puts.length;
-      if(calls>0){
-        var ratio=puts/calls;
-        rPC(parseFloat(ratio.toFixed(2)),PCR.prev,false);
-        pcDone=true;
-      }
-    }
-  }catch(e){}
-  if(!pcDone)rPC(PCR.val,PCR.prev,true);
+  rPC(VR.cur,VR.v3m,true);
+  var[vix,vix3m]=await Promise.all([fC('^VIX',35),fC('^VIX3M',35)]);
+  var ok=!!(vix&&vix.length>=2);
+  if(ok)rVix(vix[vix.length-1],vix[vix.length-2],vix3m?vix3m[vix3m.length-1]:VR.v3m,vix.slice(-30),false);
+  // Update term structure with live data
+  var v=vix?vix[vix.length-1]:VR.cur;
+  var v3=vix3m?vix3m[vix3m.length-1]:VR.v3m;
+  rPC(v,v3,!ok);
   btnDone(btn,ok);
 }
 
@@ -642,16 +629,14 @@ function rSecs(data){
 async function loadMacro(btn){
   btnLoad(btn);
   rYC(MR.y2,MR.y10);rMom(null,null);rDXY(null);rGBP(null);rSecs(null);
-  var syms=['^TNX','SPY','QQQ','DX-Y.NYB','GBPUSD=X','XLK','XLY','XLI','XLF','XLE','XLV','XLP','XLU'];
+  var syms=['^TNX','^IRX','SPY','QQQ','DX-Y.NYB','GBPUSD=X','XLK','XLY','XLI','XLF','XLE','XLV','XLP','XLU'];
   var res=await Promise.allSettled(syms.map(s=>fC(s,400)));
   var D={};syms.forEach((s,i)=>D[s]=res[i].value||null);
   var y10=D['^TNX']?D['^TNX'][D['^TNX'].length-1]:MR.y10;
-  // 2Y — FRED DGS2, filter out '.' missing values, take last valid
-  var y2=MR.y2;
-  var y2d=await fFred('DGS2',10);
-  if(y2d&&y2d.length){var valid=y2d.filter(x=>x.v>0&&!isNaN(x.v));if(valid.length)y2=valid[valid.length-1].v;}
+  // ^IRX is 13-week T-bill annualised yield — more reliable than 2Y via FRED proxy
+  var y3m=D['^IRX']?D['^IRX'][D['^IRX'].length-1]:MR.y2;
   markFresh('yc');markFresh('mom');
-  rYC(y2,y10);rMom(D['SPY'],D['QQQ']);rDXY(D['DX-Y.NYB']);rGBP(D['GBPUSD=X']);
+  rYC(y3m,y10);rMom(D['SPY'],D['QQQ']);rDXY(D['DX-Y.NYB']);rGBP(D['GBPUSD=X']);
   var spy=D['SPY'];
   if(spy&&spy.length>=22){
     var sr=(spy[spy.length-1]-spy[spy.length-22])/spy[spy.length-22]*100;
@@ -784,7 +769,7 @@ function compFG(){
     {n:'Yield Curve',s:window._yS||'neut',desc:'2Y-10Y spread'},
     {n:'VIX Level',s:window._vS||'neut',desc:'Equity volatility'},
     {n:'MOVE Index',s:window._moveS||'neut',desc:'Bond volatility'},
-    {n:'Put/Call',s:window._pcS||'neut',desc:'Options flow (contrarian)'},
+    {n:'VIX Term',s:window._pcS||'neut',desc:'Contango/backwardation'},
     {n:'Momentum',s:window._mS||'neut',desc:'SPY/QQQ vs MAs'},
     {n:'Credit Sprd',s:window._csS||'neut',desc:'HY/IG spreads'},
     {n:'Gold/Silver',s:window._gsrS||'neut',desc:'Risk-on/off ratio'},
@@ -811,7 +796,7 @@ function compFG(){
 rEqS();lWL();refWL();
 rYC(MR.y2,MR.y10);rMom(null,null);rDXY(null);rGBP(null);rSecs(null);
 rVix(VR.cur,VR.prev,VR.v3m,null,true);
-rPC(PCR.val,PCR.prev,true);
+rPC(VR.cur,VR.v3m,true);
 rCreditSpreads(CR.hy,CR.ig,null,true);
 rMove(CR.move,CR.move,null,true);
 window._fS='neut';window._rS='neut';window._csS='neut';window._moveS='neut';window._pcS='neut';
