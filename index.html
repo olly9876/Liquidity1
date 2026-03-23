@@ -570,11 +570,11 @@ async function loadVix(btn){
   var c=await fC('^VIX',35);
   var ok=!!(c&&c.length>=2);
   if(ok)rVix(c[c.length-1],c[c.length-2],VR.v3m,c.slice(-30),false);
-  // Fetch put/call ratio from Yahoo Finance options chain (CORS-friendly)
+  // Fetch put/call ratio via proxy — SPY options chain
   var pcDone=false;
   try{
-    // Use SPY options chain — total puts/calls gives market put/call ratio
-    var r=await tF('https://query1.finance.yahoo.com/v7/finance/options/SPY',10000);
+    var optUrl='https://query1.finance.yahoo.com/v7/finance/options/SPY';
+    var r=await tF(PROXY+encodeURIComponent(optUrl),12000);
     if(r.ok){
       var j=await r.json();
       var chain=j.optionChain.result[0];
@@ -646,7 +646,10 @@ async function loadMacro(btn){
   var res=await Promise.allSettled(syms.map(s=>fC(s,400)));
   var D={};syms.forEach((s,i)=>D[s]=res[i].value||null);
   var y10=D['^TNX']?D['^TNX'][D['^TNX'].length-1]:MR.y10;
-  var y2d=await fFred('DGS2',5),y2=y2d?y2d[y2d.length-1].v:MR.y2;
+  // 2Y — FRED DGS2, filter out '.' missing values, take last valid
+  var y2=MR.y2;
+  var y2d=await fFred('DGS2',10);
+  if(y2d&&y2d.length){var valid=y2d.filter(x=>x.v>0&&!isNaN(x.v));if(valid.length)y2=valid[valid.length-1].v;}
   markFresh('yc');markFresh('mom');
   rYC(y2,y10);rMom(D['SPY'],D['QQQ']);rDXY(D['DX-Y.NYB']);rGBP(D['GBPUSD=X']);
   var spy=D['SPY'];
