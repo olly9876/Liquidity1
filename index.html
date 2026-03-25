@@ -240,13 +240,6 @@ function ageStr(key){
   if(mins===1)return'1 min ago';
   return mins+'m ago';
 }
-function ageBadge(key,isRef){
-  if(isRef)return`<span class="age age-old">ref ${AS_OF}</span>`;
-  var t=_fetchTimes[key];if(!t)return'';
-  var mins=Math.round((Date.now()-t)/60000);
-  var cls=mins<5?'age-live':mins<30?'age-warn':'age-old';
-  return`<span class="age ${cls}">${ageStr(key)}</span>`;
-}
 function setCardAge(cardId,key,isRef){
   var el=$(cardId);if(!el)return;
   var existing=el.querySelector('.card-age-row');
@@ -560,7 +553,7 @@ function rPC(vix,vix3m,isRef){
   var pi=$('pc-i');if(pi)pi.textContent=spread>5?'Steep contango — normal conditions. Market expects vol to rise over time.':spread>0?'Mild contango — calm but watchful. Normal market structure.':spread>-3?'Flat curve — uncertainty rising. Watch for shift to backwardation.':spread>-8?'Backwardation — near-term fear elevated. Often signals bottoming process.':'Deep backwardation — acute stress. Historically strong contrarian buy signal.';
   setCardAge('card-pc','pc',isRef);
   if(!isRef)markFresh('pc');
-  window._pcS=spread<-3?'bull':spread>3?'neut':'neut';
+  window._pcS=spread>3?'bull':spread<-3?'bear':'neut';
   compFG();
 }
 
@@ -608,7 +601,6 @@ function rDXY(c){
   if(d){d.textContent=(chg>=0?'▲ +':'▼ ')+fmt(Math.abs(chg),2)+'%';d.className='dlt '+(chg>=0?'up':'dn')}
   var b=$('dx-b');if(b){b.textContent=cur>100?'STRONG':cur>97?'NEUTRAL':'WEAK';b.className='badge '+(cur>100?'br':cur>97?'bo':'bl')}
   setCardAge('card-dxy','dxy',false);markFresh('dxy');
-  window._dS=cur<97?'bull':cur>103?'bear':'neut';
 }
 
 function rGBP(c){
@@ -766,7 +758,7 @@ async function runScan(btn){
 // ── FEAR/GREED (8 components) ─────────────────────────────────────
 function compFG(){
   var comps=[
-    {n:'Yield Curve',s:window._yS||'neut',desc:'2Y-10Y spread'},
+    {n:'Yield Curve',s:window._yS||'neut',desc:'3M-10Y spread'},
     {n:'VIX Level',s:window._vS||'neut',desc:'Equity volatility'},
     {n:'MOVE Index',s:window._moveS||'neut',desc:'Bond volatility'},
     {n:'VIX Term',s:window._pcS||'neut',desc:'Contango/backwardation'},
@@ -799,7 +791,7 @@ rVix(VR.cur,VR.prev,VR.v3m,null,true);
 rPC(VR.cur,VR.v3m,true);
 rCreditSpreads(CR.hy,CR.ig,null,true);
 rMove(CR.move,CR.move,null,true);
-window._fS='neut';window._rS='neut';window._csS='neut';window._moveS='neut';window._pcS='neut';
+window._gsrS='neut';window._gbpS='neut';window._csS='neut';window._moveS='neut';window._pcS='neut';window._yS='neut';window._vS='neut';window._mS='neut';
 compFG();
 loadCommod();loadSpreads();loadVix();loadMacro();runScan();
 
