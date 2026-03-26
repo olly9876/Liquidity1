@@ -5,6 +5,7 @@
   <button class="nb" onclick="ST('spreads',this)">📊 Spreads</button>
   <button class="nb" onclick="ST('vix',this)">⚡ VIX</button>
   <button class="nb" onclick="ST('macro',this)">🌐 Macro</button>
+  <button class="nb" onclick="ST('m7',this)">✦ Mag 7</button>
   <button class="nb" onclick="ST('wl',this)">📋 Watchlist</button>
   <button class="nb" onclick="ST('scan',this)">🚀 Breakouts</button>
   <button class="nb" onclick="ST('fg',this)">🎯 F/G</button>
@@ -151,8 +152,39 @@
     <div class="clbl">Sector Rotation vs SPY (1M)</div>
     <div id="sec-r"></div>
   </div>
+  <div class="g2">
+    <div class="card" id="card-claims">
+      <div class="chdr"><div class="clbl">Initial Claims</div><span class="badge" id="claims-b">—</span></div>
+      <div class="val" id="claims-v">—</div>
+      <div class="sub">weekly jobless (000s)</div>
+      <div class="dlt" id="claims-d"></div>
+    </div>
+    <div class="card" id="card-ism">
+      <div class="chdr"><div class="clbl">ISM Mfg PMI</div><span class="badge" id="ism-b">—</span></div>
+      <div class="val" id="ism-v">—</div>
+      <div class="sub">50 = expansion line</div>
+      <div class="dlt" id="ism-d"></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="clbl" style="margin-bottom:10px">Market Calendar</div>
+    <div id="cal-r"></div>
+  </div>
   <div class="rts" id="mac-ts"></div>
   <button class="rbtn" onclick="loadMacro(this)">⟳ Refresh Macro</button>
+</div>
+
+<!-- MAG 7 TAB -->
+<div class="tab" id="tab-m7">
+  <div class="sec">Magnificent 7</div>
+  <div class="note">Performance vs SPY · 1M relative strength · MA status</div>
+  <div id="m7-r"><div style="font-size:10px;color:var(--mt);text-align:center;padding:20px">Loading…</div></div>
+  <div class="card" style="margin-top:4px">
+    <div class="clbl" style="margin-bottom:8px">M7 vs SPY (1 Month)</div>
+    <div id="m7-rs"></div>
+  </div>
+  <div class="rts" id="m7-ts"></div>
+  <button class="rbtn" onclick="loadM7(this)">⟳ Refresh Mag 7</button>
 </div>
 
 <!-- WATCHLIST TAB -->
@@ -621,11 +653,11 @@ function rSecs(data){
 async function loadMacro(btn){
   btnLoad(btn);
   rYC(MR.y2,MR.y10);rMom(null,null);rDXY(null);rGBP(null);rSecs(null);
+  renderCal();
   var syms=['^TNX','^IRX','SPY','QQQ','DX-Y.NYB','GBPUSD=X','XLK','XLY','XLI','XLF','XLE','XLV','XLP','XLU'];
   var res=await Promise.allSettled(syms.map(s=>fC(s,400)));
   var D={};syms.forEach((s,i)=>D[s]=res[i].value||null);
   var y10=D['^TNX']?D['^TNX'][D['^TNX'].length-1]:MR.y10;
-  // ^IRX is 13-week T-bill annualised yield — more reliable than 2Y via FRED proxy
   var y3m=D['^IRX']?D['^IRX'][D['^IRX'].length-1]:MR.y2;
   markFresh('yc');markFresh('mom');
   rYC(y3m,y10);rMom(D['SPY'],D['QQQ']);rDXY(D['DX-Y.NYB']);rGBP(D['GBPUSD=X']);
@@ -637,11 +669,169 @@ async function loadMacro(btn){
     var sd=sk.map(k=>{var c=D[k];if(!c||c.length<22)return{n:sn[k],rs:0};return{n:sn[k],rs:parseFloat(((c[c.length-1]-c[c.length-22])/c[c.length-22]*100-sr).toFixed(1))}}).sort((a,b)=>b.rs-a.rs);
     rSecs(sd);
   }
+  // Jobless claims — FRED ICSA (weekly initial claims)
+  var claims=await fFred('ICSA',5);
+  if(claims&&claims.length>=2){
+    rClaims(claims[claims.length-1].v,claims[claims.length-2].v,false);
+  }else{rClaims(213000,210000,true);}
+  // ISM Manufacturing — FRED NAPM
+  var ism=await fFred('NAPM',3);
+  if(ism&&ism.length>=2){
+    rISM(ism[ism.length-1].v,ism[ism.length-2].v,false);
+  }else{rISM(50.3,49.8,true);}
   sv('mac-ts','Updated '+ts());compFG();
   btnDone(btn,!!(D['SPY']));
 }
 
-// ── WATCHLIST ────────────────────────────────────────────────────
+// ── JOBLESS CLAIMS + ISM ──────────────────────────────────────────
+function rClaims(val,prev,isRef){
+  var k=Math.round(val/1000);
+  sv('claims-v',k);
+  var chg=val-prev;
+  var cd=$('claims-d');
+  if(cd){cd.textContent=(chg>=0?'▲ +':'▼ ')+Math.abs(Math.round(chg/1000))+'k vs prev week';cd.className='dlt '+(chg>=0?'dn':'up')}
+  var cb=$('claims-b');
+  var lbl=val<220000?'HEALTHY':val<260000?'NORMAL':val<300000?'RISING':'ELEVATED';
+  var col=val<220000?'#00e599':val<260000?'#ffd93d':val<300000?'#ff9500':'#ff3b5c';
+  if(cb){cb.textContent=isRef?'REF':lbl;cb.className='badge';cb.style.cssText=`background:${col}22;color:${col};border:1px solid ${col}44`}
+}
+
+function rISM(val,prev,isRef){
+  sv('ism-v',fmt(val,1));
+  var chg=val-prev;
+  var id=$('ism-d');
+  if(id){id.textContent=(chg>=0?'▲ +':'▼ ')+fmt(Math.abs(chg),1)+' vs prev';id.className='dlt '+(chg>=0?'up':'dn')}
+  var ib=$('ism-b');
+  var lbl=val>55?'EXPANDING':val>50?'GROWING':val>48?'CONTRACTING':'WEAK';
+  var col=val>55?'#00e599':val>50?'#ffd93d':val>48?'#ff9500':'#ff3b5c';
+  if(ib){ib.textContent=isRef?'REF':lbl;ib.className='badge';ib.style.cssText=`background:${col}22;color:${col};border:1px solid ${col}44`}
+}
+
+// ── MARKET CALENDAR ───────────────────────────────────────────────
+function renderCal(){
+  var now=new Date();
+  var events=[
+    // FOMC 2026
+    {d:'2026-05-07',t:'FOMC Decision',cat:'fed'},
+    {d:'2026-06-18',t:'FOMC Decision',cat:'fed'},
+    {d:'2026-07-30',t:'FOMC Decision',cat:'fed'},
+    {d:'2026-09-17',t:'FOMC Decision',cat:'fed'},
+    {d:'2026-10-29',t:'FOMC Decision',cat:'fed'},
+    {d:'2026-12-10',t:'FOMC Decision',cat:'fed'},
+    // CPI 2026 (approx)
+    {d:'2026-04-10',t:'CPI Release',cat:'cpi'},
+    {d:'2026-05-13',t:'CPI Release',cat:'cpi'},
+    {d:'2026-06-11',t:'CPI Release',cat:'cpi'},
+    {d:'2026-07-14',t:'CPI Release',cat:'cpi'},
+    {d:'2026-08-12',t:'CPI Release',cat:'cpi'},
+    {d:'2026-09-10',t:'CPI Release',cat:'cpi'},
+    // M7 Earnings Q2 2026 (estimated)
+    {d:'2026-04-23',t:'TSLA Earnings (est)',cat:'earn'},
+    {d:'2026-04-29',t:'META Earnings (est)',cat:'earn'},
+    {d:'2026-04-30',t:'MSFT Earnings (est)',cat:'earn'},
+    {d:'2026-04-30',t:'GOOGL Earnings (est)',cat:'earn'},
+    {d:'2026-05-01',t:'AMZN Earnings (est)',cat:'earn'},
+    {d:'2026-05-07',t:'AAPL Earnings (est)',cat:'earn'},
+    {d:'2026-05-28',t:'NVDA Earnings (est)',cat:'earn'},
+  ];
+  // Sort and filter to next 10 upcoming
+  var upcoming=events
+    .map(e=>({...e,dt:new Date(e.d)}))
+    .filter(e=>e.dt>=now)
+    .sort((a,b)=>a.dt-b.dt)
+    .slice(0,10);
+
+  var cols={fed:'#00d4ff',cpi:'#ffd93d',earn:'#a855f7'};
+  var icons={fed:'🏦',cpi:'📈',earn:'💰'};
+  var cal=$('cal-r');
+  if(!cal)return;
+  if(!upcoming.length){cal.innerHTML='<div style="font-size:10px;color:var(--mt)">No upcoming events</div>';return;}
+  cal.innerHTML=upcoming.map(e=>{
+    var col=cols[e.cat];
+    var daysAway=Math.ceil((e.dt-now)/86400000);
+    var dStr=daysAway===0?'Today':daysAway===1?'Tomorrow':'in '+daysAway+'d';
+    var mo=e.dt.toLocaleString('en-US',{month:'short',day:'numeric'});
+    return`<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--bd)">
+      <div style="font-size:16px">${icons[e.cat]}</div>
+      <div style="flex:1"><div style="font-size:11px;color:var(--tx)">${e.t}</div><div style="font-size:9px;color:var(--mt);margin-top:1px">${mo}</div></div>
+      <div style="font-size:9px;padding:2px 8px;border-radius:8px;background:${col}22;color:${col};border:1px solid ${col}44;white-space:nowrap">${dStr}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── MAG 7 ─────────────────────────────────────────────────────────
+var M7=['AAPL','MSFT','NVDA','GOOGL','AMZN','META','TSLA'];
+var M7_NAMES={AAPL:'Apple',MSFT:'Microsoft',NVDA:'Nvidia',GOOGL:'Alphabet',AMZN:'Amazon',META:'Meta',TSLA:'Tesla'};
+
+async function loadM7(btn){
+  btnLoad(btn);
+  var el=$('m7-r');
+  if(el)el.innerHTML='<div style="font-size:10px;color:var(--mt);text-align:center;padding:20px">Loading…</div>';
+  var syms=['SPY',...M7];
+  var res=await Promise.allSettled(syms.map(s=>fC(s,400,false)));
+  var D={};syms.forEach((s,i)=>D[s]=res[i].value||null);
+  var spy=D['SPY'];
+  var ok=!!spy;
+
+  // Relative strength bars
+  var rs7=M7.map(tk=>{
+    var c=D[tk];if(!c||c.length<22)return{tk,rs:0,ok:false};
+    var ret1m=(c[c.length-1]-c[c.length-22])/c[c.length-22]*100;
+    var spyRet=spy&&spy.length>=22?(spy[spy.length-1]-spy[spy.length-22])/spy[spy.length-22]*100:0;
+    return{tk,rs:parseFloat((ret1m-spyRet).toFixed(1)),ret1m:parseFloat(ret1m.toFixed(1)),ok:true};
+  }).sort((a,b)=>b.rs-a.rs);
+
+  var rsEl=$('m7-rs');
+  if(rsEl)rsEl.innerHTML=rs7.map(s=>{
+    var col=s.rs>2?'#00e599':s.rs>0?'#ffd93d':s.rs>-2?'#ff9500':'#ff3b5c';
+    var w=Math.min(100,Math.abs(s.rs)/10*100);
+    return`<div class="brow"><div class="blbl" style="font-size:10px;width:60px">${s.tk}</div><div class="btrk"><div class="bfil" style="width:${w}%;background:${col}"></div></div><div style="text-align:right;flex-shrink:0;min-width:80px"><span style="font-size:10px;color:${col}">${s.rs>=0?'+':''}${s.rs}% vs SPY</span></div></div>`;
+  }).join('');
+
+  // Individual cards
+  if(el)el.innerHTML=M7.map(tk=>{
+    var c=D[tk];
+    if(!c||c.length<10)return`<div class="card"><div style="font-family:'Bebas Neue',sans-serif;font-size:18px;color:var(--ac)">${tk}</div><div style="font-size:10px;color:var(--warn);margin-top:4px">⚠ Data unavailable</div></div>`;
+    var p=c[c.length-1],pv=c[c.length-2]||p;
+    var m50=c.slice(-50).reduce((a,b)=>a+b,0)/Math.min(50,c.length);
+    var m200=c.length>=200?c.slice(-200).reduce((a,b)=>a+b,0)/200:c[0];
+    var h=Math.max(...c.slice(-252)),l=Math.min(...c.slice(-252));
+    var chg=(p-pv)/pv*100;
+    var ret1m=c.length>=22?(p-c[c.length-22])/c[c.length-22]*100:0;
+    var spyRet=spy&&spy.length>=22?(spy[spy.length-1]-spy[spy.length-22])/spy[spy.length-22]*100:0;
+    var rs=ret1m-spyRet;
+    var a50=p>m50,a200=p>m200;
+    var pH=(p-h)/h*100;
+    var rng=h>l?Math.round((p-l)/(h-l)*100):50;
+    var sig=a50&&a200?'bull':!a50&&!a200?'bear':'neut';
+    var sc={bull:'#00e599',bear:'#ff3b5c',neut:'#ffd93d'}[sig];
+    var rsCol=rs>0?'#00e599':'#ff3b5c';
+    return`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <div><span style="font-family:'Bebas Neue',sans-serif;font-size:22px;color:var(--ac)">${tk}</span><span style="font-size:9px;color:var(--mt);margin-left:6px">${M7_NAMES[tk]}</span></div>
+      <span style="font-size:9px;padding:2px 7px;border-radius:8px;background:${sc}22;color:${sc};border:1px solid ${sc}44">${sig==='bull'?'UPTREND':sig==='bear'?'DOWNTREND':'MIXED'}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:8px">
+      <div><div style="font-family:'Bebas Neue',sans-serif;font-size:30px;line-height:1">$${fmt(p,2)}</div>
+        <div style="font-size:10px;color:${chg>=0?'#00e599':'#ff3b5c'};margin-top:2px">${chg>=0?'▲ +':'▼ '}${fmt(Math.abs(chg),2)}% today</div></div>
+      <div style="text-align:right">
+        <div style="font-size:10px;color:${rsCol};font-weight:500">${rs>=0?'+':''}${fmt(rs,1)}% vs SPY</div>
+        <div style="font-size:9px;color:var(--mt)">1M relative strength</div>
+      </div>
+    </div>
+    <div style="font-size:9px;color:var(--mt);display:flex;justify-content:space-between;margin-bottom:3px"><span>$${fmt(l,0)}</span><span>${rng}% of 52W range</span><span>$${fmt(h,0)}</span></div>
+    <div class="rng"><div class="rnf" style="width:${rng}%"></div><div class="rnt" style="left:${rng}%"></div></div>
+    <div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:7px">
+      ${pill(a50?'pu':'pd',(a50?'▲':'▼')+' 50MA')}${pill(a200?'pu':'pd',(a200?'▲':'▼')+' 200MA')}
+      <span style="font-size:9px;padding:2px 8px;border-radius:8px;background:${rsCol}15;color:${rsCol}">${rs>=0?'▲':'▼'} vs SPY</span>
+      ${pH>=-3?'<span class="pill pb">🚀 Near High</span>':''}
+    </div></div>`;
+  }).join('');
+
+  sv('m7-ts','Updated '+ts());
+  btnDone(btn,ok);
+}
+
+// ── WATCHLIST ─────────────────────────────────────────────────────
 var WL=[];
 function lWL(){try{WL=JSON.parse(localStorage.getItem('liq_wl')||'[]')}catch(e){WL=[]}}
 function sWL(){try{localStorage.setItem('liq_wl',JSON.stringify(WL))}catch(e){}}
@@ -653,12 +843,15 @@ async function refWL(btn){
   btnLoad(btn);
   if(e)e.style.display='none';
   if(r)r.innerHTML='<div style="font-size:10px;color:var(--mt);text-align:center;padding:14px">Loading…</div>';
-  var res=await Promise.allSettled(WL.map(t=>fC(t,400,true)));
-  if(r)r.innerHTML=WL.map((t,i)=>wCard(t,res[i].value)).join('');
+  // Fetch SPY for relative strength + all watchlist stocks
+  var allSyms=['SPY',...WL];
+  var res=await Promise.allSettled(allSyms.map(t=>fC(t,400,true)));
+  var spyData=res[0].value?res[0].value.map(x=>typeof x==='object'?x.c:x):null;
+  if(r)r.innerHTML=WL.map((t,i)=>wCard(t,res[i+1].value,spyData)).join('');
   sv('wl-ts','Updated '+ts());
   btnDone(btn,true);
 }
-function wCard(tk,raw){
+function wCard(tk,raw,spyRaw){
   var c=raw?raw.map(x=>typeof x==='object'?x.c:x):null;
   var vols=raw?raw.map(x=>typeof x==='object'?x.v:null):null;
   if(!c||c.length<10)return`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-family:'Bebas Neue',sans-serif;font-size:18px;color:var(--ac)">${tk}</span><button class="rmv" onclick="rmWL('${tk}')">✕</button></div><div style="font-size:10px;color:var(--warn);margin-top:6px">⚠ No data — check ticker is a valid US stock.</div></div>`;
@@ -669,6 +862,16 @@ function wCard(tk,raw){
   var chg=(p-pv)/pv*100,pH=(p-h)/h*100,rng=h>l?Math.round((p-l)/(h-l)*100):50;
   var a50=p>m50,a200=p>m200,gx=m50>m200,sig=a50&&a200?'bull':!a50&&!a200?'bear':'neut';
   var sc={bull:'#00e599',bear:'#ff3b5c',neut:'#ffd93d'}[sig];
+  // Relative strength vs SPY
+  var rsHtml='';
+  if(spyRaw&&spyRaw.length>=22&&c.length>=22){
+    var tkRet=(p-c[c.length-22])/c[c.length-22]*100;
+    var spyP=spyRaw[spyRaw.length-1],spyPrev=spyRaw[spyRaw.length-22];
+    var spyRet=(spyP-spyPrev)/spyPrev*100;
+    var rs=parseFloat((tkRet-spyRet).toFixed(1));
+    var rsCol=rs>0?'#00e599':'#ff3b5c';
+    rsHtml=`<span style="font-size:9px;padding:2px 8px;border-radius:8px;background:${rsCol}15;color:${rsCol}">${rs>=0?'▲ +':'▼ '}${rs}% vs SPY</span>`;
+  }
   // Volume analysis
   var volHtml='';
   if(vols&&vols.length>=20){
@@ -676,7 +879,7 @@ function wCard(tk,raw){
     var vRat=avgV>0?recentV/avgV:0;
     if(vRat>0)volHtml=`<span class="${vRat>1.5?'vol-badge vol-high':'vol-badge vol-norm'}">${vRat>1.5?'🔥':''} Vol ${fmt(vRat,1)}×</span>`;
   }
-  return`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div><span style="font-family:'Bebas Neue',sans-serif;font-size:20px;color:var(--ac)">${tk}</span><span style="font-size:9px;padding:2px 7px;border-radius:8px;margin-left:8px;background:${sc}22;color:${sc};border:1px solid ${sc}44">${sig==='bull'?'UPTREND':sig==='bear'?'DOWNTREND':'MIXED'}</span></div><button class="rmv" onclick="rmWL('${tk}')">✕</button></div><div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:10px"><div><div style="font-family:'Bebas Neue',sans-serif;font-size:32px;line-height:1">$${fmt(p,2)}</div><div style="font-size:11px;color:${chg>=0?'#00e599':'#ff3b5c'};margin-top:2px">${chg>=0?'▲ +':'▼ '}${fmt(Math.abs(chg),2)}%</div></div><div style="text-align:right;font-size:10px;color:var(--mt)"><div>50MA <span style="color:${a50?'#00e599':'#ff3b5c'}">${a50?'▲':'▼'} $${fmt(m50,0)}</span></div><div>200MA <span style="color:${a200?'#00e599':'#ff3b5c'}">${a200?'▲':'▼'} $${fmt(m200,0)}</span></div></div></div><div style="font-size:9px;color:var(--mt);display:flex;justify-content:space-between;margin-bottom:4px"><span>$${fmt(l,0)}</span><span style="color:var(--tx)">${rng}% of range</span><span>$${fmt(h,0)}</span></div><div class="rng"><div class="rnf" style="width:${rng}%"></div><div class="rnt" style="left:${rng}%"></div></div><div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:8px">${pill(a50?'pu':'pd',(a50?'▲':'▼')+' 50MA')}${pill(a200?'pu':'pd',(a200?'▲':'▼')+' 200MA')}${pill(gx?'pp':'pd',gx?'Golden ✦':'Death ✖')}${volHtml}${pH>-3?'<span class="pill pb">🚀 Near High</span>':''}</div></div>`;
+  return`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div><span style="font-family:'Bebas Neue',sans-serif;font-size:20px;color:var(--ac)">${tk}</span><span style="font-size:9px;padding:2px 7px;border-radius:8px;margin-left:8px;background:${sc}22;color:${sc};border:1px solid ${sc}44">${sig==='bull'?'UPTREND':sig==='bear'?'DOWNTREND':'MIXED'}</span></div><button class="rmv" onclick="rmWL('${tk}')">✕</button></div><div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:10px"><div><div style="font-family:'Bebas Neue',sans-serif;font-size:32px;line-height:1">$${fmt(p,2)}</div><div style="font-size:11px;color:${chg>=0?'#00e599':'#ff3b5c'};margin-top:2px">${chg>=0?'▲ +':'▼ '}${fmt(Math.abs(chg),2)}%</div></div><div style="text-align:right;font-size:10px;color:var(--mt)"><div>50MA <span style="color:${a50?'#00e599':'#ff3b5c'}">${a50?'▲':'▼'} $${fmt(m50,0)}</span></div><div>200MA <span style="color:${a200?'#00e599':'#ff3b5c'}">${a200?'▲':'▼'} $${fmt(m200,0)}</span></div></div></div><div style="font-size:9px;color:var(--mt);display:flex;justify-content:space-between;margin-bottom:4px"><span>$${fmt(l,0)}</span><span style="color:var(--tx)">${rng}% of range</span><span>$${fmt(h,0)}</span></div><div class="rng"><div class="rnf" style="width:${rng}%"></div><div class="rnt" style="left:${rng}%"></div></div><div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:8px">${pill(a50?'pu':'pd',(a50?'▲':'▼')+' 50MA')}${pill(a200?'pu':'pd',(a200?'▲':'▼')+' 200MA')}${pill(gx?'pp':'pd',gx?'Golden ✦':'Death ✖')}${rsHtml}${volHtml}${pH>-3?'<span class="pill pb">🚀 Near High</span>':''}</div></div>`;
 }
 
 // ── BREAKOUT SCANNER (expanded + volume) ─────────────────────────
@@ -791,15 +994,19 @@ rVix(VR.cur,VR.prev,VR.v3m,null,true);
 rPC(VR.cur,VR.v3m,true);
 rCreditSpreads(CR.hy,CR.ig,null,true);
 rMove(CR.move,CR.move,null,true);
+rClaims(213000,210000,true);
+rISM(50.3,49.8,true);
+renderCal();
 window._gsrS='neut';window._gbpS='neut';window._csS='neut';window._moveS='neut';window._pcS='neut';window._yS='neut';window._vS='neut';window._mS='neut';
 compFG();
-loadCommod();loadSpreads();loadVix();loadMacro();runScan();
+loadCommod();loadSpreads();loadVix();loadMacro();loadM7();runScan();
 
 // Refresh intervals
 setInterval(loadVix,60000);
 setInterval(loadCommod,180000);
 setInterval(loadSpreads,120000);
 setInterval(loadMacro,120000);
+setInterval(loadM7,300000);
 // Age badge refresh every 60s
 setInterval(()=>{
   [['card-cs','spreads-cs'],['card-move','spreads-move'],['card-vix','vix'],['card-vix3m','vix'],
