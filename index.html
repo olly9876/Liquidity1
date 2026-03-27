@@ -16,13 +16,13 @@
   <div class="sec">Commodities</div>
   <div class="g2">
     <div class="card" id="card-gold">
-      <div class="clbl">Gold</div>
+      <div class="clbl">Gold <span style="font-size:8px;color:var(--mt)">USD/oz</span></div>
       <div class="val" id="c-gold">—</div>
       <div class="dlt" id="c-goldd"></div>
       <svg class="sp" id="sp-gold" viewBox="0 0 300 46" style="margin-top:6px"></svg>
     </div>
     <div class="card" id="card-silver">
-      <div class="clbl">Silver</div>
+      <div class="clbl">Silver <span style="font-size:8px;color:var(--mt)">USD/oz</span></div>
       <div class="val" id="c-silver">—</div>
       <div class="dlt" id="c-silverd"></div>
       <svg class="sp" id="sp-silver" viewBox="0 0 300 46" style="margin-top:6px"></svg>
@@ -30,13 +30,13 @@
   </div>
   <div class="g2">
     <div class="card" id="card-wti">
-      <div class="clbl">WTI Crude</div>
+      <div class="clbl">WTI Crude <span style="font-size:8px;color:var(--mt)">USD/bbl</span></div>
       <div class="val" id="c-wti">—</div>
       <div class="dlt" id="c-wtid"></div>
       <svg class="sp" id="sp-wti" viewBox="0 0 300 46" style="margin-top:6px"></svg>
     </div>
     <div class="card" id="card-brent">
-      <div class="clbl">Brent Crude</div>
+      <div class="clbl">Brent Crude <span style="font-size:8px;color:var(--mt)">USD/bbl</span></div>
       <div class="val" id="c-brent">—</div>
       <div class="dlt" id="c-brentd"></div>
       <svg class="sp" id="sp-brent" viewBox="0 0 300 46" style="margin-top:6px"></svg>
@@ -44,12 +44,12 @@
   </div>
   <div class="g2">
     <div class="card" id="card-ng">
-      <div class="clbl">Natural Gas</div>
+      <div class="clbl">Natural Gas <span style="font-size:8px;color:var(--mt)">USD/MMBtu</span></div>
       <div class="val" id="c-ng">—</div>
       <div class="dlt" id="c-ngd"></div>
     </div>
     <div class="card" id="card-copper">
-      <div class="clbl">Copper</div>
+      <div class="clbl">Copper <span style="font-size:8px;color:var(--mt)">USD/lb</span></div>
       <div class="val" id="c-copper">—</div>
       <div class="dlt" id="c-copperd"></div>
     </div>
@@ -392,7 +392,8 @@ async function fFred(id,lim=20){
 }
 
 // ── COMMODITIES ───────────────────────────────────────────────────
-var COMMOD_REF={gold:2858,silver:31.8,wti:69.4,brent:72.8,ng:3.8,copper:4.42};
+// Ref data — approximate values (used as fallback only)
+var COMMOD_REF={gold:3100,silver:34.0,wti:69.0,brent:73.0,ng:4.1,copper:4.85};
 
 function rCommodCard(valId,dltId,cardId,spId,cur,prev,prefix,decimals,hist,col){
   sv(valId,(prefix||'')+fmt(cur,decimals));
@@ -410,20 +411,34 @@ async function loadCommod(btn){
   rCommodCard('c-wti','c-wtid','card-wti','sp-wti',COMMOD_REF.wti,COMMOD_REF.wti*0.99,'$',2,null,'#ff6b35');
   rCommodCard('c-brent','c-brentd','card-brent','sp-brent',COMMOD_REF.brent,COMMOD_REF.brent*0.99,'$',2,null,'#ff9500');
   rCommodCard('c-ng','c-ngd','card-ng','sp-ng',COMMOD_REF.ng,COMMOD_REF.ng*0.99,'$',3,null,'#00d4ff');
-  rCommodCard('c-copper','c-copperd','card-copper','sp-copper',COMMOD_REF.copper,COMMOD_REF.copper*0.99,'$',3,null,'#ff6b35');
+  rCommodCard('c-copper','c-copperd','card-copper','sp-copper',COMMOD_REF.copper,COMMOD_REF.copper*0.99,'$',3,null,'#e07b54');
 
-  // Fetch live data — Yahoo Finance commodity tickers
+  // Fetch live data — Yahoo Finance commodity futures tickers
+  // Note: HG=F (copper) is quoted in USD cents/lb on Yahoo — divide by 100
   var syms={'GC=F':'gold','SI=F':'silver','CL=F':'wti','BZ=F':'brent','NG=F':'ng','HG=F':'copper'};
   var keys=Object.keys(syms);
   var res=await Promise.allSettled(keys.map(k=>fC(k,60,false)));
   var D={};keys.forEach((k,i)=>D[syms[k]]=res[i].value||null);
 
+  // Fix copper: Yahoo returns cents/lb, convert to $/lb
+  if(D['copper']&&D['copper'].length>=2){
+    // If value looks like cents (>100) divide by 100
+    if(D['copper'][D['copper'].length-1]>100){
+      D['copper']=D['copper'].map(v=>v/100);
+    }
+  }
+
   var cols={gold:'#ffd93d',silver:'#a0aec0',wti:'#ff6b35',brent:'#ff9500',ng:'#00d4ff',copper:'#e07b54'};
   var pfx={gold:'$',silver:'$',wti:'$',brent:'$',ng:'$',copper:'$'};
   var dec={gold:0,silver:2,wti:2,brent:2,ng:3,copper:3};
-  var ids={gold:['c-gold','c-goldd','card-gold','sp-gold'],silver:['c-silver','c-silverd','card-silver','sp-silver'],
-    wti:['c-wti','c-wtid','card-wti','sp-wti'],brent:['c-brent','c-brentd','card-brent','sp-brent'],
-    ng:['c-ng','c-ngd','card-ng',null],copper:['c-copper','c-copperd','card-copper',null]};
+  var ids={
+    gold:['c-gold','c-goldd','card-gold','sp-gold'],
+    silver:['c-silver','c-silverd','card-silver','sp-silver'],
+    wti:['c-wti','c-wtid','card-wti','sp-wti'],
+    brent:['c-brent','c-brentd','card-brent','sp-brent'],
+    ng:['c-ng','c-ngd','card-ng',null],
+    copper:['c-copper','c-copperd','card-copper',null]
+  };
 
   var ok=false;
   Object.keys(D).forEach(name=>{
