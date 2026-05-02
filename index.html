@@ -459,10 +459,12 @@ async function loadCommod(btn){
     if(gsrb){gsrb.textContent=gsrLbl;gsrb.className='badge';gsrb.style.cssText=`background:${gsrCol}22;color:${gsrCol};border:1px solid ${gsrCol}44`}
     sv('c-gsri',gsr>90?'Very high ratio — strong risk-off signal. Historically bullish for future gold/silver returns.':gsr>80?'Elevated ratio — cautious sentiment. Watch for mean reversion in silver.':gsr>70?'Neutral range. Normal market conditions.':'Low ratio — risk-on. Silver outperforming gold.');
     window._gsrS=gsr>85?'bear':gsr<70?'bull':'neut';
-    compFG();
   }else{
-    sv('c-gsr',fmt(COMMOD_REF.gold/COMMOD_REF.silver,1));
+    var gsrFallback=COMMOD_REF.gold/COMMOD_REF.silver;
+    sv('c-gsr',fmt(gsrFallback,1));
+    window._gsrS='neut';
   }
+  compFG();
 
   sv('commod-ts','Updated '+ts());
   btnDone(btn,ok);
@@ -623,8 +625,9 @@ function rYC(y2,y10){
   sv('yc-2',fmt(y2,2)+'%');sv('yc-10',fmt(y10,2)+'%');
   var sp=Math.round((y10-y2)*100);sv('yc-sp',(sp>=0?'+':'')+sp+' bps');
   var yb=$('yc-b');if(yb){yb.textContent=sp>50?'NORMAL':sp>0?'FLAT':sp>-50?'INVERTED':'DEEP INVERT';yb.className='badge '+(sp>0?'bo':'br')}
-  setCardAge('card-yc','yc',!_fetchTimes['yc']);
+  if(_fetchTimes['yc'])setCardAge('card-yc','yc',false);
   window._yS=sp>0?'bull':'bear';
+  compFG();
 }
 function rMom(spy,qqq){
   var items=[{l:'SPY',c:spy},{l:'QQQ',c:qqq}];
@@ -640,6 +643,7 @@ function rMom(spy,qqq){
   var mb=$('m-b');if(mb){mb.textContent=bulls===2?'UPTREND':bulls===0?'DOWNTREND':'MIXED';mb.className='badge '+(bulls===2?'bl':bulls===0?'br':'bo')}
   setCardAge('card-mom','mom',!spy);
   window._mS=spy&&spy.length>200&&spy[spy.length-1]>spy.slice(-200).reduce((a,b)=>a+b,0)/200?'bull':'bear';
+  compFG();
 }
 function rDXY(c){
   if(!c||c.length<2){sv('dx-v',fmt(MR.dxy,1));var d=$('dx-d');if(d){d.textContent='Reference '+AS_OF;d.className='dlt neut'}return}
