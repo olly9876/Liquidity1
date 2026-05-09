@@ -249,7 +249,7 @@
     <div id="fg-c"></div>
   </div>
   <div class="note" id="fg-i"></div>
-  <button class="rbtn" onclick="compFG()">⟳ Recalculate</button>
+  <button class="rbtn" onclick="loadVix();loadMacro();loadCommod();loadSpreads();compFG();">⟳ Recalculate All Signals</button>
 </div>
 
 <script>'use strict';
@@ -655,7 +655,12 @@ function rDXY(c){
 }
 
 function rGBP(c){
-  if(!c||c.length<2){sv('gbp-v','1.2630');var d=$('gbp-d');if(d){d.textContent='Reference '+AS_OF;d.className='dlt neut'}return}
+  if(!c||c.length<2){
+    sv('gbp-v','—');
+    var d=$('gbp-d');if(d){d.textContent='Reference '+AS_OF;d.className='dlt neut'}
+    window._gbpS=window._gbpS||'neut';
+    return;
+  }
   var cur=c[c.length-1],prev=c[c.length-2],chg=(cur-prev)/prev*100;
   sv('gbp-v',fmt(cur,4));
   var d=$('gbp-d');
@@ -979,31 +984,79 @@ async function runScan(btn){
 
 // ── FEAR/GREED (8 components) ─────────────────────────────────────
 function compFG(){
-  var comps=[
-    {n:'Yield Curve',s:window._yS||'neut',desc:'3M-10Y spread'},
-    {n:'VIX Level',s:window._vS||'neut',desc:'Equity volatility'},
-    {n:'MOVE Index',s:window._moveS||'neut',desc:'Bond volatility'},
-    {n:'VIX Term',s:window._pcS||'neut',desc:'Contango/backwardation'},
-    {n:'Momentum',s:window._mS||'neut',desc:'SPY/QQQ vs MAs'},
-    {n:'Credit Sprd',s:window._csS||'neut',desc:'HY/IG spreads'},
-    {n:'Gold/Silver',s:window._gsrS||'neut',desc:'Risk-on/off ratio'},
-    {n:'GBP/USD',s:window._gbpS||'neut',desc:'Risk sentiment proxy'},
-  ];
-  var sc={bull:80,neut:50,bear:20};
-  var score=Math.round(comps.reduce((sum,c)=>sum+sc[c.s],0)/comps.length);
-  var n=$('fg-n');if(n)n.setAttribute('transform',`rotate(${-90+score/100*180},110,110)`);
-  var a=$('fg-arc');if(a)a.setAttribute('stroke-dashoffset',(283-score/100*283).toFixed(1));
-  sv('fg-v',score);
-  var lbl=score>=75?'EXTREME GREED':score>=60?'GREED':score>=40?'NEUTRAL':score>=25?'FEAR':'EXTREME FEAR';
-  var col=score>=60?'#00e599':score>=40?'#ffd93d':'#ff3b5c';
-  var fl=$('fg-l');if(fl){fl.textContent=lbl;fl.style.color=col}
-  var fc=$('fg-c');
-  if(fc)fc.innerHTML=comps.map(c=>{
-    var cc={bull:'#00e599',neut:'#ffd93d',bear:'#ff3b5c'}[c.s],v=sc[c.s];
-    return`<div class="brow"><div class="blbl" style="font-size:9px;width:90px">${c.n}</div><div class="btrk"><div class="bfil" style="width:${v}%;background:${cc}"></div></div><div style="flex-shrink:0;text-align:right"><div style="font-size:10px;color:${cc}">${v}</div><div style="font-size:8px;color:var(--mt)">${c.desc}</div></div></div>`;
-  }).join('');
-  var fi=$('fg-i');
-  if(fi)fi.textContent=score>=75?'Extreme greed — consider trimming risk. Corrections historically more likely.':score>=60?'Greed — stay invested but tighten stops. Watch credit spreads for early warning.':score>=40?'Neutral — balanced conditions. Focus on stock selection and relative strength.':score>=25?'Fear — buying opportunity developing. Look for vol-confirmed breakouts.':'Extreme fear — historically strong long-term entry. Scale in carefully.';
+  try{
+    var signals={
+      _yS:window._yS,_vS:window._vS,_moveS:window._moveS,
+      _pcS:window._pcS,_mS:window._mS,_csS:window._csS,
+      _gsrS:window._gsrS,_gbpS:window._gbpS
+    };
+    var valid=['bull','neut','bear'];
+    var sc={bull:80,neut:50,bear:20};
+    var comps=[
+      {n:'Yield Curve', k:'_yS',  desc:'3M-10Y spread'},
+      {n:'VIX Level',   k:'_vS',  desc:'Equity volatility'},
+      {n:'MOVE Index',  k:'_moveS',desc:'Bond volatility'},
+      {n:'VIX Term',    k:'_pcS', desc:'Contango/backwardation'},
+      {n:'Momentum',    k:'_mS',  desc:'SPY/QQQ vs MAs'},
+      {n:'Credit Sprd', k:'_csS', desc:'HY/IG spreads'},
+      {n:'Gold/Silver', k:'_gsrS',desc:'Risk-on/off ratio'},
+      {n:'GBP/USD',     k:'_gbpS',desc:'Risk sentiment proxy'},
+    ];
+    // Sanitise every signal — default to neut if missing/invalid
+    comps.forEach(c=>{
+      var raw=signals[c.k];
+      c.s=valid.indexOf(raw)>=0?raw:'neut';
+    });
+    var total=comps.reduce((sum,c)=>sum+sc[c.s],0);
+    var score=Math.round(total/comps.length);
+
+    // Update needle
+    var n=$('fg-n');
+    if(n){
+      var deg=-90+(score/100)*180;
+      n.setAttribute('transform','rotate('+deg.toFixed(1)+',110,110)');
+    }
+    // Update arc
+    var a=$('fg-arc');
+    if(a){
+      var offset=(283-(score/100)*283).toFixed(1);
+      a.setAttribute('stroke-dashoffset',offset);
+    }
+    // Score number
+    sv('fg-v',score);
+    // Label + colour
+    var lbl=score>=75?'EXTREME GREED':score>=60?'GREED':score>=40?'NEUTRAL':score>=25?'FEAR':'EXTREME FEAR';
+    var col=score>=60?'#00e599':score>=40?'#ffd93d':'#ff3b5c';
+    var fl=$('fg-l');
+    if(fl){fl.textContent=lbl;fl.style.color=col;}
+    // Components breakdown
+    var fc=$('fg-c');
+    if(fc){
+      fc.innerHTML=comps.map(c=>{
+        var cc={bull:'#00e599',neut:'#ffd93d',bear:'#ff3b5c'}[c.s];
+        var v=sc[c.s];
+        return'<div class="brow">'
+          +'<div class="blbl" style="font-size:9px;width:90px">'+c.n+'</div>'
+          +'<div class="btrk"><div class="bfil" style="width:'+v+'%;background:'+cc+'"></div></div>'
+          +'<div style="flex-shrink:0;text-align:right;min-width:60px">'
+          +'<div style="font-size:10px;color:'+cc+'">'+c.s.toUpperCase()+'</div>'
+          +'<div style="font-size:8px;color:var(--mt)">'+c.desc+'</div>'
+          +'</div></div>';
+      }).join('');
+    }
+    // Interpretation
+    var fi=$('fg-i');
+    if(fi){
+      fi.textContent=score>=75?'Extreme greed — consider trimming risk. Corrections historically more likely.'
+        :score>=60?'Greed — stay invested but tighten stops. Watch credit spreads for early warning.'
+        :score>=40?'Neutral — balanced conditions. Focus on stock selection and relative strength.'
+        :score>=25?'Fear — buying opportunity developing. Look for vol-confirmed breakouts.'
+        :'Extreme fear — historically strong long-term entry. Scale in carefully.';
+    }
+  }catch(e){
+    var fi2=$('fg-i');
+    if(fi2)fi2.textContent='Error in F/G calc: '+e.message;
+  }
 }
 
 // ── INIT ─────────────────────────────────────────────────────────
