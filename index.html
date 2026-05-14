@@ -249,6 +249,7 @@
     <div id="fg-c"></div>
   </div>
   <div class="note" id="fg-i"></div>
+  <div class="rts" id="fg-ts"></div>
   <button class="rbtn" onclick="loadVix();loadMacro();loadCommod();loadSpreads();compFG();">⟳ Recalculate All Signals</button>
 </div>
 
@@ -391,7 +392,17 @@ async function fFred(id,lim=20){
   }catch(e){return null;}
 }
 
-// ── COMMODITIES ───────────────────────────────────────────────────
+// ── Raw numeric values for continuous F/G scoring ─────────────────
+window._fg={
+  vix:null,        // VIX level
+  vixSpread:null,  // VIX3M - VIX
+  move:null,       // MOVE index estimate
+  ycSpread:null,   // 10Y - 3M in bps
+  spyVs200:null,   // SPY % above/below 200MA
+  hySpr:null,      // HY spread bps
+  gsr:null,        // Gold/Silver ratio
+  gbp:null         // GBP/USD rate
+};
 // Ref data — approximate values (used as fallback only)
 var COMMOD_REF={gold:3100,silver:34.0,wti:69.0,brent:73.0,ng:4.1,copper:4.85};
 
@@ -458,11 +469,13 @@ async function loadCommod(btn){
     var gsrCol=gsr>90?'#ff3b5c':gsr>80?'#ffd93d':gsr>70?'#00d4ff':'#00e599';
     if(gsrb){gsrb.textContent=gsrLbl;gsrb.className='badge';gsrb.style.cssText=`background:${gsrCol}22;color:${gsrCol};border:1px solid ${gsrCol}44`}
     sv('c-gsri',gsr>90?'Very high ratio — strong risk-off signal. Historically bullish for future gold/silver returns.':gsr>80?'Elevated ratio — cautious sentiment. Watch for mean reversion in silver.':gsr>70?'Neutral range. Normal market conditions.':'Low ratio — risk-on. Silver outperforming gold.');
-    window._gsrS=gsr>85?'bear':gsr<70?'bull':'neut';
+    window._gsrS=gsr>85?"bear":gsr<70?"bull":"neut";
+    window._fg.gsr=gsr;
   }else{
     var gsrFallback=COMMOD_REF.gold/COMMOD_REF.silver;
     sv('c-gsr',fmt(gsrFallback,1));
-    window._gsrS='neut';
+    window._gsrS="neut";
+    window._fg.gsr=gsrFallback;
   }
   compFG();
 
@@ -535,6 +548,7 @@ function rCreditSpreads(hy,ig,extra,isRef){
   }).join('');
   setCardAge('card-cs','spreads-cs',isRef);
   window._csS=hy>500||ig>200?'bear':hy>350?'neut':'bull';
+  window._fg.hySpr=hy;
   compFG();
 }
 
@@ -552,6 +566,7 @@ function rMove(val,prev,hist,isRef){
   if(hist)spark('move-sp',hist,'#a855f7');
   setCardAge('card-move','spreads-move',isRef);
   window._moveS=val<100?'bull':val<120?'neut':'bear';
+  window._fg.move=val;
   compFG();
 }
 
@@ -587,6 +602,7 @@ function rVix(cur,prev,v3m,hist,fb){
   if(!fb)markFresh('vix');
   sv('v-ts','Updated '+ts());
   window._vS=cur>25?'bear':cur<15?'bull':'neut';
+  window._fg.vix=cur;
   compFG();
 }
 
@@ -603,6 +619,7 @@ function rPC(vix,vix3m,isRef){
   setCardAge('card-pc','pc',isRef);
   if(!isRef)markFresh('pc');
   window._pcS=spread>3?'bull':spread<-3?'bear':'neut';
+  window._fg.vixSpread=spread;
   compFG();
 }
 
@@ -627,6 +644,7 @@ function rYC(y2,y10){
   var yb=$('yc-b');if(yb){yb.textContent=sp>50?'NORMAL':sp>0?'FLAT':sp>-50?'INVERTED':'DEEP INVERT';yb.className='badge '+(sp>0?'bo':'br')}
   if(_fetchTimes['yc'])setCardAge('card-yc','yc',false);
   window._yS=sp>0?'bull':'bear';
+  window._fg.ycSpread=sp;
   compFG();
 }
 function rMom(spy,qqq){
@@ -642,7 +660,10 @@ function rMom(spy,qqq){
   var bulls=[spy&&spy.length>50&&spy[spy.length-1]>spy.slice(-50).reduce((a,b)=>a+b,0)/50,qqq&&qqq.length>50&&qqq[qqq.length-1]>qqq.slice(-50).reduce((a,b)=>a+b,0)/50].filter(Boolean).length;
   var mb=$('m-b');if(mb){mb.textContent=bulls===2?'UPTREND':bulls===0?'DOWNTREND':'MIXED';mb.className='badge '+(bulls===2?'bl':bulls===0?'br':'bo')}
   setCardAge('card-mom','mom',!spy);
-  window._mS=spy&&spy.length>200&&spy[spy.length-1]>spy.slice(-200).reduce((a,b)=>a+b,0)/200?'bull':'bear';
+  var spyLast=spy&&spy.length>0?spy[spy.length-1]:null;
+  var spy200=spy&&spy.length>=200?spy.slice(-200).reduce((a,b)=>a+b,0)/200:null;
+  window._mS=spyLast&&spy200&&spyLast>spy200?'bull':'bear';
+  window._fg.spyVs200=spyLast&&spy200?parseFloat(((spyLast-spy200)/spy200*100).toFixed(2)):null;
   compFG();
 }
 function rDXY(c){
@@ -669,6 +690,7 @@ function rGBP(c){
   if(b){b.textContent=cur>1.30?'GBP STRONG':cur>1.25?'NEUTRAL':'GBP WEAK';b.className='badge '+(cur>1.30?'bl':cur>1.25?'bo':'br')}
   setCardAge('card-gbp','gbp',false);markFresh('gbp');
   window._gbpS=cur>1.30?'bull':cur<1.20?'bear':'neut';
+  window._fg.gbp=cur;
   compFG();
 }
 function rSecs(data){
@@ -982,69 +1004,96 @@ async function runScan(btn){
   btnDone(btn,hi.length>0||lo.length>0);
 }
 
-// ── FEAR/GREED (8 components) ─────────────────────────────────────
+// ── FEAR/GREED — continuous scoring ──────────────────────────────
+function clamp(v,mn,mx){return Math.max(mn,Math.min(mx,v));}
+
 function compFG(){
   try{
-    var signals={
-      _yS:window._yS,_vS:window._vS,_moveS:window._moveS,
-      _pcS:window._pcS,_mS:window._mS,_csS:window._csS,
-      _gsrS:window._gsrS,_gbpS:window._gbpS
-    };
-    var valid=['bull','neut','bear'];
-    var sc={bull:80,neut:50,bear:20};
+    var r=window._fg;
+
+    // Each signal returns 0-100 (0=extreme fear, 100=extreme greed)
+    // Falls back to 50 (neutral) if data not available
+
+    // 1. VIX Level: VIX=12→100, VIX=25→50, VIX=40→0
+    var sVix=r.vix!=null
+      ?clamp(100-(r.vix-12)/(40-12)*100,0,100)
+      :50;
+
+    // 2. VIX Term Structure: spread=+10→90, spread=0→50, spread=-10→10
+    var sVixTerm=r.vixSpread!=null
+      ?clamp(50+r.vixSpread*4,0,100)
+      :50;
+
+    // 3. MOVE Index: MOVE=60→95, MOVE=100→50, MOVE=150→5
+    var sMove=r.move!=null
+      ?clamp(100-(r.move-60)/(150-60)*95,0,100)
+      :50;
+
+    // 4. Yield Curve (bps, 10Y-3M): +200→85, 0→50, -100→20
+    var sYC=r.ycSpread!=null
+      ?clamp(50+r.ycSpread/300*50,0,100)
+      :50;
+
+    // 5. SPY vs 200MA (%): +10%→85, 0→50, -10%→15
+    var sMom=r.spyVs200!=null
+      ?clamp(50+r.spyVs200*3.5,0,100)
+      :50;
+
+    // 6. HY Credit Spread (bps): 200→90, 350→55, 600→10
+    var sCredit=r.hySpr!=null
+      ?clamp(100-(r.hySpr-150)/(650-150)*90,0,100)
+      :50;
+
+    // 7. Gold/Silver Ratio: 60→90, 80→50, 100→10
+    var sGSR=r.gsr!=null
+      ?clamp(100-(r.gsr-55)/(105-55)*90,0,100)
+      :50;
+
+    // 8. GBP/USD: 1.40→90, 1.25→50, 1.10→10
+    var sGBP=r.gbp!=null
+      ?clamp(50+(r.gbp-1.25)*300,0,100)
+      :50;
+
+    var scores=[sVix,sVixTerm,sMove,sYC,sMom,sCredit,sGSR,sGBP];
+    var score=Math.round(scores.reduce((a,b)=>a+b,0)/scores.length);
+
     var comps=[
-      {n:'Yield Curve', k:'_yS',  desc:'3M-10Y spread'},
-      {n:'VIX Level',   k:'_vS',  desc:'Equity volatility'},
-      {n:'MOVE Index',  k:'_moveS',desc:'Bond volatility'},
-      {n:'VIX Term',    k:'_pcS', desc:'Contango/backwardation'},
-      {n:'Momentum',    k:'_mS',  desc:'SPY/QQQ vs MAs'},
-      {n:'Credit Sprd', k:'_csS', desc:'HY/IG spreads'},
-      {n:'Gold/Silver', k:'_gsrS',desc:'Risk-on/off ratio'},
-      {n:'GBP/USD',     k:'_gbpS',desc:'Risk sentiment proxy'},
+      {n:'VIX Level',    sc:sVix,     raw:r.vix!=null?'VIX '+fmt(r.vix,1):'no data'},
+      {n:'VIX Term',     sc:sVixTerm, raw:r.vixSpread!=null?(r.vixSpread>=0?'+':'')+fmt(r.vixSpread,1)+' spread':'no data'},
+      {n:'MOVE Index',   sc:sMove,    raw:r.move!=null?'MOVE ~'+Math.round(r.move):'no data'},
+      {n:'Yield Curve',  sc:sYC,      raw:r.ycSpread!=null?(r.ycSpread>=0?'+':'')+r.ycSpread+'bps':'no data'},
+      {n:'SPY vs 200MA', sc:sMom,     raw:r.spyVs200!=null?(r.spyVs200>=0?'+':'')+fmt(r.spyVs200,1)+'%':'no data'},
+      {n:'Credit Sprd',  sc:sCredit,  raw:r.hySpr!=null?Math.round(r.hySpr)+'bps HY':'no data'},
+      {n:'Gold/Silver',  sc:sGSR,     raw:r.gsr!=null?'ratio '+fmt(r.gsr,1):'no data'},
+      {n:'GBP/USD',      sc:sGBP,     raw:r.gbp!=null?fmt(r.gbp,4):'no data'},
     ];
-    // Sanitise every signal — default to neut if missing/invalid
-    comps.forEach(c=>{
-      var raw=signals[c.k];
-      c.s=valid.indexOf(raw)>=0?raw:'neut';
-    });
-    var total=comps.reduce((sum,c)=>sum+sc[c.s],0);
-    var score=Math.round(total/comps.length);
 
     // Update needle
     var n=$('fg-n');
-    if(n){
-      var deg=-90+(score/100)*180;
-      n.setAttribute('transform','rotate('+deg.toFixed(1)+',110,110)');
-    }
+    if(n){n.setAttribute('transform','rotate('+(-90+score/100*180).toFixed(1)+',110,110)');}
     // Update arc
     var a=$('fg-arc');
-    if(a){
-      var offset=(283-(score/100)*283).toFixed(1);
-      a.setAttribute('stroke-dashoffset',offset);
-    }
-    // Score number
+    if(a){a.setAttribute('stroke-dashoffset',(283-score/100*283).toFixed(1));}
+
     sv('fg-v',score);
-    // Label + colour
     var lbl=score>=75?'EXTREME GREED':score>=60?'GREED':score>=40?'NEUTRAL':score>=25?'FEAR':'EXTREME FEAR';
     var col=score>=60?'#00e599':score>=40?'#ffd93d':'#ff3b5c';
-    var fl=$('fg-l');
-    if(fl){fl.textContent=lbl;fl.style.color=col;}
-    // Components breakdown
+    var fl=$('fg-l');if(fl){fl.textContent=lbl;fl.style.color=col;}
+
     var fc=$('fg-c');
     if(fc){
       fc.innerHTML=comps.map(c=>{
-        var cc={bull:'#00e599',neut:'#ffd93d',bear:'#ff3b5c'}[c.s];
-        var v=sc[c.s];
+        var cc=c.sc>=60?'#00e599':c.sc>=40?'#ffd93d':'#ff3b5c';
         return'<div class="brow">'
           +'<div class="blbl" style="font-size:9px;width:90px">'+c.n+'</div>'
-          +'<div class="btrk"><div class="bfil" style="width:'+v+'%;background:'+cc+'"></div></div>'
-          +'<div style="flex-shrink:0;text-align:right;min-width:60px">'
-          +'<div style="font-size:10px;color:'+cc+'">'+c.s.toUpperCase()+'</div>'
-          +'<div style="font-size:8px;color:var(--mt)">'+c.desc+'</div>'
+          +'<div class="btrk"><div class="bfil" style="width:'+c.sc.toFixed(0)+'%;background:'+cc+'"></div></div>'
+          +'<div style="flex-shrink:0;text-align:right;min-width:70px">'
+          +'<div style="font-size:10px;color:'+cc+'">'+Math.round(c.sc)+'</div>'
+          +'<div style="font-size:8px;color:var(--mt)">'+c.raw+'</div>'
           +'</div></div>';
       }).join('');
     }
-    // Interpretation
+
     var fi=$('fg-i');
     if(fi){
       fi.textContent=score>=75?'Extreme greed — consider trimming risk. Corrections historically more likely.'
@@ -1053,9 +1102,10 @@ function compFG(){
         :score>=25?'Fear — buying opportunity developing. Look for vol-confirmed breakouts.'
         :'Extreme fear — historically strong long-term entry. Scale in carefully.';
     }
+    sv('fg-ts','Score updated '+ts());
   }catch(e){
     var fi2=$('fg-i');
-    if(fi2)fi2.textContent='Error in F/G calc: '+e.message;
+    if(fi2)fi2.textContent='Error: '+e.message;
   }
 }
 
