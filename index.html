@@ -6,6 +6,7 @@
   <button class="nb" onclick="ST('vix',this)">⚡ VIX</button>
   <button class="nb" onclick="ST('macro',this)">🌐 Macro</button>
   <button class="nb" onclick="ST('m7',this)">✦ Mag 7</button>
+  <button class="nb" onclick="ST('port',this)">💼 Portfolio</button>
   <button class="nb" onclick="ST('wl',this)">📋 Watchlist</button>
   <button class="nb" onclick="ST('scan',this)">🚀 Breakouts</button>
   <button class="nb" onclick="ST('fg',this)">🎯 F/G</button>
@@ -187,6 +188,38 @@
   <button class="rbtn" onclick="loadM7(this)">⟳ Refresh Mag 7</button>
 </div>
 
+<!-- PORTFOLIO TAB -->
+<div class="tab" id="tab-port">
+  <div class="sec">Portfolio</div>
+  <div class="card">
+    <div class="clbl" style="margin-bottom:7px">ADD HOLDING</div>
+    <div style="display:flex;gap:6px;margin-bottom:6px">
+      <input class="wi" id="port-tk" placeholder="Ticker e.g. NVDA" style="flex:2" onkeydown="if(event.key==='Enter')addPort()">
+      <input class="wi" id="port-wt" placeholder="Weight %" style="flex:1" type="number" min="0" max="100">
+    </div>
+    <button class="ab" style="width:100%" onclick="addPort()">+ Add Holding</button>
+    <div style="font-size:9px;color:var(--mt);margin-top:5px">Weights don't need to sum to 100 — shown as relative %</div>
+  </div>
+  <div id="port-empty" class="note">No holdings yet. Add tickers above.</div>
+  <div id="port-summary" style="display:none">
+    <div class="g2">
+      <div class="card"><div class="clbl">Portfolio Return</div><div class="val" id="port-ret">—</div><div class="sub">weighted daily</div></div>
+      <div class="card"><div class="clbl">vs SPY</div><div class="val" id="port-rs">—</div><div class="sub">1M relative strength</div></div>
+    </div>
+    <div class="card">
+      <div class="clbl" style="margin-bottom:8px">Holdings</div>
+      <div id="port-rows"></div>
+    </div>
+    <div class="card">
+      <div class="clbl" style="margin-bottom:8px">Momentum Breakdown</div>
+      <div id="port-mom"></div>
+    </div>
+  </div>
+  <div class="rts" id="port-ts"></div>
+  <button class="rbtn" onclick="refPort(this)">⟳ Refresh Portfolio</button>
+  <button class="rbtn" style="color:var(--red);margin-top:4px" onclick="cClear();refPort()">🗑 Clear Data Cache</button>
+</div>
+
 <!-- WATCHLIST TAB -->
 <div class="tab" id="tab-wl">
   <div class="sec">Watchlist</div>
@@ -359,7 +392,28 @@ function pYH(json,withVol){
   }catch(e){return null}
 }
 
+// ── localStorage cache (15-min TTL) ──────────────────────────────
+var CACHE_TTL=15*60*1000;
+function cGet(key){
+  try{
+    var raw=localStorage.getItem('liq_c_'+key);
+    if(!raw)return null;
+    var obj=JSON.parse(raw);
+    if(Date.now()-obj.ts>CACHE_TTL){localStorage.removeItem('liq_c_'+key);return null;}
+    return obj.data;
+  }catch(e){return null;}
+}
+function cSet(key,data){
+  try{localStorage.setItem('liq_c_'+key,JSON.stringify({ts:Date.now(),data}));}catch(e){}
+}
+function cClear(){
+  try{Object.keys(localStorage).filter(k=>k.startsWith('liq_c_')).forEach(k=>localStorage.removeItem(k));}catch(e){}
+}
+
 async function fC(sym,days=400,withVol=false){
+  var ck=sym+'_'+days+'_'+(withVol?1:0);
+  var cached=cGet(ck);
+  if(cached)return cached;
   var yh=toYH(sym);
   var range=days>365?'2y':days>180?'1y':'6mo';
   var yhUrl='https://query1.finance.yahoo.com/v8/finance/chart/'+encodeURIComponent(yh)+'?interval=1d&range='+range+'&includePrePost=false';
@@ -373,7 +427,7 @@ async function fC(sym,days=400,withVol=false){
       if(!r.ok)continue;
       var j=await r.json();
       var res=pYH(j,withVol);
-      if(res&&res.length>=5)return res;
+      if(res&&res.length>=5){cSet(ck,res);return res;}
     }catch(e){}
   }
   return null;
@@ -381,15 +435,19 @@ async function fC(sym,days=400,withVol=false){
 
 // ── FRED via Worker proxy ─────────────────────────────────────────
 async function fFred(id,lim=20){
+  var ck='fred_'+id;
+  var cached=cGet(ck);
+  if(cached)return cached.slice(-lim);
   var url='https://fred.stlouisfed.org/graph/fredgraph.csv?id='+id;
   try{
     var r=await tF(PROXY+encodeURIComponent(url),14000);
     if(!r.ok)return null;
     var txt=await r.text();
     var lines=txt.trim().split('\n').slice(1);
-    var out=lines.slice(-lim).map(l=>{var p=l.split(',');return{d:p[0].trim(),v:parseFloat(p[1])}}).filter(x=>x.d&&!isNaN(x.v));
-    return out.length>=2?out:null;
-  }catch(e){return null;}
+    var out=lines.map(l=>{var p=l.split(',');return{d:p[0].trim(),v:parseFloat(p[1])}}).filter(x=>x.d&&!isNaN(x.v));
+    if(out.length>=2){cSet(ck,out);return out.slice(-lim);}
+  }catch(e){}
+  return null;
 }
 
 // ── Raw numeric values for continuous F/G scoring ─────────────────
@@ -500,7 +558,14 @@ async function loadSpreads(btn){
 
   // Credit spread direction: if HYG underperforming TLT → spreads widening
   var live=false;
-  if(hyg&&hyg.length>=22&&tlt&&tlt.length>=22){
+  // Real FRED credit spreads — ICE BofA HY and IG OAS
+  var[hyFred,igFred]=await Promise.all([fFred('BAMLH0A0HYM2',5),fFred('BAMLC0A0CM',5)]);
+  if(hyFred&&hyFred.length>=2){
+    var hyLive=hyFred[hyFred.length-1].v*100; // FRED returns in %, convert to bps
+    var igLive=igFred?igFred[igFred.length-1].v*100:CR.ig;
+    rCreditSpreads(Math.round(hyLive),Math.round(igLive),null,false);
+    markFresh('spreads-cs');live=true;
+  }else if(hyg&&hyg.length>=22&&tlt&&tlt.length>=22){
     var hygRet=(hyg[hyg.length-1]-hyg[hyg.length-22])/hyg[hyg.length-22]*100;
     var tltRet=(tlt[tlt.length-1]-tlt[tlt.length-22])/tlt[tlt.length-22]*100;
     // spread direction: negative means credit underperforming (spreads widening)
@@ -806,7 +871,18 @@ function renderCal(){
 }
 
 // ── MAG 7 ─────────────────────────────────────────────────────────
-var M7=['AAPL','MSFT','NVDA','GOOGL','AMZN','META','TSLA'];
+// M7 next earnings dates (estimated Q2 2026)
+var M7_EARN={
+  TSLA:'2026-04-23',META:'2026-04-29',MSFT:'2026-04-30',
+  GOOGL:'2026-04-30',AMZN:'2026-05-01',AAPL:'2026-05-07',NVDA:'2026-05-28'
+};
+function earnCountdown(tk){
+  var d=M7_EARN[tk];if(!d)return'';
+  var days=Math.ceil((new Date(d)-new Date())/(86400000));
+  if(days<0)return''; // past
+  var col=days<=7?'#ff6b35':days<=14?'#ffd93d':'#a855f7';
+  return`<span style="font-size:9px;padding:2px 8px;border-radius:8px;background:${col}22;color:${col};border:1px solid ${col}33">💰 Earnings ${days===0?'today':'in '+days+'d'}</span>`;
+}
 var M7_NAMES={AAPL:'Apple',MSFT:'Microsoft',NVDA:'Nvidia',GOOGL:'Alphabet',AMZN:'Amazon',META:'Meta',TSLA:'Tesla'};
 
 async function loadM7(btn){
@@ -842,6 +918,9 @@ async function loadM7(btn){
     var m50=c.slice(-50).reduce((a,b)=>a+b,0)/Math.min(50,c.length);
     var m200=c.length>=200?c.slice(-200).reduce((a,b)=>a+b,0)/200:c[0];
     var h=Math.max(...c.slice(-252)),l=Math.min(...c.slice(-252));
+    var ath2y=Math.max(...c.slice(-504));
+    var dd=(p-ath2y)/ath2y*100;
+    var ddCol=dd>-5?'#00e599':dd>-15?'#ffd93d':dd>-30?'#ff9500':'#ff3b5c';
     var chg=(p-pv)/pv*100;
     var ret1m=c.length>=22?(p-c[c.length-22])/c[c.length-22]*100:0;
     var spyRet=spy&&spy.length>=22?(spy[spy.length-1]-spy[spy.length-22])/spy[spy.length-22]*100:0;
@@ -869,12 +948,116 @@ async function loadM7(btn){
     <div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:7px">
       ${pill(a50?'pu':'pd',(a50?'▲':'▼')+' 50MA')}${pill(a200?'pu':'pd',(a200?'▲':'▼')+' 200MA')}
       <span style="font-size:9px;padding:2px 8px;border-radius:8px;background:${rsCol}15;color:${rsCol}">${rs>=0?'▲':'▼'} vs SPY</span>
+      <span style="font-size:9px;padding:2px 8px;border-radius:8px;background:${ddCol}15;color:${ddCol}">DD ${fmt(dd,1)}%</span>
+      ${earnCountdown(tk)}
       ${pH>=-3?'<span class="pill pb">🚀 Near High</span>':''}
     </div></div>`;
   }).join('');
 
   sv('m7-ts','Updated '+ts());
   btnDone(btn,ok);
+}
+
+// ── PORTFOLIO ─────────────────────────────────────────────────────
+var PORT=[];
+function lPort(){try{PORT=JSON.parse(localStorage.getItem('liq_port')||'[]')}catch(e){PORT=[]}}
+function sPort(){try{localStorage.setItem('liq_port',JSON.stringify(PORT))}catch(e){}}
+function addPort(){
+  var tk=$('port-tk'),wt=$('port-wt');
+  if(!tk||!wt)return;
+  var t=tk.value.trim().toUpperCase().replace(/[^A-Z0-9.\-]/g,'');
+  var w=parseFloat(wt.value)||5;
+  if(!t||PORT.find(p=>p.t===t)||PORT.length>=25)return;
+  PORT.push({t,w});sPort();tk.value='';wt.value='';refPort();
+}
+function rmPort(t){PORT=PORT.filter(p=>p.t!==t);sPort();refPort();}
+function updPortWeight(t,w){var p=PORT.find(x=>x.t===t);if(p){p.w=parseFloat(w)||1;sPort();}}
+
+async function refPort(btn){
+  lPort();
+  var empty=$('port-empty'),summary=$('port-summary');
+  if(!PORT.length){
+    if(empty)empty.style.display='block';
+    if(summary)summary.style.display='none';
+    return;
+  }
+  btnLoad(btn);
+  if(empty)empty.style.display='none';
+  if(summary)summary.style.display='block';
+  var allSyms=['SPY',...PORT.map(p=>p.t)];
+  var res=await Promise.allSettled(allSyms.map(s=>fC(s,400,false)));
+  var D={};allSyms.forEach((s,i)=>D[s]=res[i].value||null);
+  var spy=D['SPY'];
+  var totalW=PORT.reduce((s,p)=>s+p.w,0)||1;
+  // Weighted daily return
+  var wtdRet=0,wtdRS=0,validW=0;
+  var spyRet1d=spy&&spy.length>=2?(spy[spy.length-1]-spy[spy.length-2])/spy[spy.length-2]*100:0;
+  var spyRet1m=spy&&spy.length>=22?(spy[spy.length-1]-spy[spy.length-22])/spy[spy.length-22]*100:0;
+  PORT.forEach(p=>{
+    var c=D[p.t];if(!c||c.length<2)return;
+    var w=p.w/totalW;
+    var r1d=(c[c.length-1]-c[c.length-2])/c[c.length-2]*100;
+    var r1m=c.length>=22?(c[c.length-1]-c[c.length-22])/c[c.length-22]*100:0;
+    wtdRet+=r1d*w;
+    wtdRS+=(r1m-spyRet1m)*w;
+    validW+=w;
+  });
+  if(validW>0){wtdRet/=validW;wtdRS/=validW;}
+  var retEl=$('port-ret'),rsEl=$('port-rs');
+  if(retEl){retEl.textContent=(wtdRet>=0?'+':'')+fmt(wtdRet,2)+'%';retEl.style.color=wtdRet>=0?'#00e599':'#ff3b5c';}
+  if(rsEl){rsEl.textContent=(wtdRS>=0?'+':'')+fmt(wtdRS,1)+'%';rsEl.style.color=wtdRS>=0?'#00e599':'#ff3b5c';}
+  // Holdings rows
+  var rows=$('port-rows');
+  if(rows){
+    rows.innerHTML=PORT.map(p=>{
+      var c=D[p.t];
+      var price=c?c[c.length-1]:null;
+      var chg=c&&c.length>=2?(c[c.length-1]-c[c.length-2])/c[c.length-2]*100:null;
+      var m200=c&&c.length>=200?c.slice(-200).reduce((a,b)=>a+b,0)/200:null;
+      var ath=c&&c.length>=2?Math.max(...c.slice(-504)):null; // 2Y high as ATH proxy
+      var dd=price&&ath?(price-ath)/ath*100:null;
+      var a200=price&&m200?price>m200:null;
+      var wPct=((p.w/totalW)*100).toFixed(0)+'%';
+      var col=chg!=null?(chg>=0?'#00e599':'#ff3b5c'):'var(--mt)';
+      var ddCol=dd!=null?(dd>-5?'#00e599':dd>-15?'#ffd93d':dd>-30?'#ff9500':'#ff3b5c'):'var(--mt)';
+      return`<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--dim)">
+        <div style="flex:1">
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="font-family:'Bebas Neue',sans-serif;font-size:16px;color:var(--ac)">${p.t}</span>
+            <span style="font-size:9px;color:var(--mt);background:var(--s2);padding:1px 6px;border-radius:6px">${wPct}</span>
+            ${a200!=null?`<span style="font-size:9px;color:${a200?'#00e599':'#ff3b5c'}">${a200?'▲':'▼'} 200MA</span>`:''}
+          </div>
+          ${dd!=null?`<div style="font-size:9px;color:${ddCol};margin-top:2px">DD: ${fmt(dd,1)}% from 2Y high</div>`:''}
+        </div>
+        <div style="text-align:right">
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:16px">${price?'$'+fmt(price,2):'—'}</div>
+          <div style="font-size:10px;color:${col}">${chg!=null?(chg>=0?'▲ +':'▼ ')+fmt(Math.abs(chg),2)+'%':'—'}</div>
+        </div>
+        <button class="rmv" onclick="rmPort('${p.t}')">✕</button>
+      </div>`;
+    }).join('');
+  }
+  // Momentum breakdown
+  var mom=$('port-mom');
+  if(mom){
+    var bull=0,neut_=0,bear=0;
+    PORT.forEach(p=>{
+      var c=D[p.t];if(!c||c.length<50)return;
+      var price=c[c.length-1];
+      var m50=c.slice(-50).reduce((a,b)=>a+b,0)/50;
+      var m200=c.length>=200?c.slice(-200).reduce((a,b)=>a+b,0)/200:null;
+      if(price>m50&&(!m200||price>m200))bull++;
+      else if(price<m50&&(!m200||price<m200))bear++;
+      else neut_++;
+    });
+    var tot=bull+neut_+bear||1;
+    mom.innerHTML=`
+      <div class="brow"><div class="blbl">Uptrend</div><div class="btrk"><div class="bfil" style="width:${bull/tot*100}%;background:#00e599"></div></div><div class="bval" style="color:#00e599">${bull} stocks</div></div>
+      <div class="brow"><div class="blbl">Mixed</div><div class="btrk"><div class="bfil" style="width:${neut_/tot*100}%;background:#ffd93d"></div></div><div class="bval" style="color:#ffd93d">${neut_} stocks</div></div>
+      <div class="brow"><div class="blbl">Downtrend</div><div class="btrk"><div class="bfil" style="width:${bear/tot*100}%;background:#ff3b5c"></div></div><div class="bval" style="color:#ff3b5c">${bear} stocks</div></div>`;
+  }
+  sv('port-ts','Updated '+ts());
+  btnDone(btn,true);
 }
 
 // ── WATCHLIST ─────────────────────────────────────────────────────
@@ -905,7 +1088,10 @@ function wCard(tk,raw,spyRaw){
   var m50=c.slice(-50).reduce((a,b)=>a+b,0)/Math.min(50,c.length);
   var m200=c.length>=200?c.slice(-200).reduce((a,b)=>a+b,0)/200:c[0];
   var h=Math.max(...c.slice(-252)),l=Math.min(...c.slice(-252));
+  var ath2y=Math.max(...c.slice(-504)); // 2-year high as ATH proxy
   var chg=(p-pv)/pv*100,pH=(p-h)/h*100,rng=h>l?Math.round((p-l)/(h-l)*100):50;
+  var dd=(p-ath2y)/ath2y*100; // drawdown from 2Y high
+  var ddCol=dd>-5?'#00e599':dd>-15?'#ffd93d':dd>-30?'#ff9500':'#ff3b5c';
   var a50=p>m50,a200=p>m200,gx=m50>m200,sig=a50&&a200?'bull':!a50&&!a200?'bear':'neut';
   var sc={bull:'#00e599',bear:'#ff3b5c',neut:'#ffd93d'}[sig];
   // Relative strength vs SPY
@@ -925,7 +1111,7 @@ function wCard(tk,raw,spyRaw){
     var vRat=avgV>0?recentV/avgV:0;
     if(vRat>0)volHtml=`<span class="${vRat>1.5?'vol-badge vol-high':'vol-badge vol-norm'}">${vRat>1.5?'🔥':''} Vol ${fmt(vRat,1)}×</span>`;
   }
-  return`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div><span style="font-family:'Bebas Neue',sans-serif;font-size:20px;color:var(--ac)">${tk}</span><span style="font-size:9px;padding:2px 7px;border-radius:8px;margin-left:8px;background:${sc}22;color:${sc};border:1px solid ${sc}44">${sig==='bull'?'UPTREND':sig==='bear'?'DOWNTREND':'MIXED'}</span></div><button class="rmv" onclick="rmWL('${tk}')">✕</button></div><div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:10px"><div><div style="font-family:'Bebas Neue',sans-serif;font-size:32px;line-height:1">$${fmt(p,2)}</div><div style="font-size:11px;color:${chg>=0?'#00e599':'#ff3b5c'};margin-top:2px">${chg>=0?'▲ +':'▼ '}${fmt(Math.abs(chg),2)}%</div></div><div style="text-align:right;font-size:10px;color:var(--mt)"><div>50MA <span style="color:${a50?'#00e599':'#ff3b5c'}">${a50?'▲':'▼'} $${fmt(m50,0)}</span></div><div>200MA <span style="color:${a200?'#00e599':'#ff3b5c'}">${a200?'▲':'▼'} $${fmt(m200,0)}</span></div></div></div><div style="font-size:9px;color:var(--mt);display:flex;justify-content:space-between;margin-bottom:4px"><span>$${fmt(l,0)}</span><span style="color:var(--tx)">${rng}% of range</span><span>$${fmt(h,0)}</span></div><div class="rng"><div class="rnf" style="width:${rng}%"></div><div class="rnt" style="left:${rng}%"></div></div><div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:8px">${pill(a50?'pu':'pd',(a50?'▲':'▼')+' 50MA')}${pill(a200?'pu':'pd',(a200?'▲':'▼')+' 200MA')}${pill(gx?'pp':'pd',gx?'Golden ✦':'Death ✖')}${rsHtml}${volHtml}${pH>-3?'<span class="pill pb">🚀 Near High</span>':''}</div></div>`;
+  return`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div><span style="font-family:'Bebas Neue',sans-serif;font-size:20px;color:var(--ac)">${tk}</span><span style="font-size:9px;padding:2px 7px;border-radius:8px;margin-left:8px;background:${sc}22;color:${sc};border:1px solid ${sc}44">${sig==='bull'?'UPTREND':sig==='bear'?'DOWNTREND':'MIXED'}</span></div><button class="rmv" onclick="rmWL('${tk}')">✕</button></div><div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:10px"><div><div style="font-family:'Bebas Neue',sans-serif;font-size:32px;line-height:1">$${fmt(p,2)}</div><div style="font-size:11px;color:${chg>=0?'#00e599':'#ff3b5c'};margin-top:2px">${chg>=0?'▲ +':'▼ '}${fmt(Math.abs(chg),2)}%</div></div><div style="text-align:right;font-size:10px;color:var(--mt)"><div>50MA <span style="color:${a50?'#00e599':'#ff3b5c'}">${a50?'▲':'▼'} $${fmt(m50,0)}</span></div><div>200MA <span style="color:${a200?'#00e599':'#ff3b5c'}">${a200?'▲':'▼'} $${fmt(m200,0)}</span></div></div></div><div style="font-size:9px;color:var(--mt);display:flex;justify-content:space-between;margin-bottom:4px"><span>$${fmt(l,0)}</span><span style="color:var(--tx)">${rng}% of range</span><span>$${fmt(h,0)}</span></div><div class="rng"><div class="rnf" style="width:${rng}%"></div><div class="rnt" style="left:${rng}%"></div></div><div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:8px">${pill(a50?'pu':'pd',(a50?'▲':'▼')+' 50MA')}${pill(a200?'pu':'pd',(a200?'▲':'▼')+' 200MA')}${pill(gx?'pp':'pd',gx?'Golden ✦':'Death ✖')}${rsHtml}${volHtml}<span style="font-size:9px;padding:2px 8px;border-radius:8px;background:${ddCol}15;color:${ddCol}">DD ${fmt(dd,1)}%</span>${pH>-3?'<span class="pill pb">🚀 Near High</span>':''}</div></div>`;
 }
 
 // ── BREAKOUT SCANNER (expanded + volume) ─────────────────────────
@@ -951,12 +1137,9 @@ async function runScan(btn){
   var sb=$('sc-b');if(sb){sb.textContent='SCANNING';sb.className='badge bl'}
   btnLoad(btn);
   sv('sc-h','…');sv('sc-l','…');sv('sc-vh','…');sv('sc-tot','…');
-  var all=[];
-  for(var i=0;i<UNI.length;i+=6){
-    var batch=UNI.slice(i,i+6);
-    var res=await Promise.allSettled(batch.map(s=>fC(s,400,true)));
-    res.forEach((r,j)=>all.push({t:batch[j],raw:r.value||null}));
-  }
+  // Run all fetches in parallel - ~4x faster than sequential batches
+  var res=await Promise.allSettled(UNI.map(s=>fC(s,400,true)));
+  var all=UNI.map((t,i)=>({t,raw:res[i].value||null}));
   var hi=[],lo=[];
   all.forEach(item=>{
     var raw=item.raw;if(!raw||raw.length<30)return;
@@ -1110,7 +1293,7 @@ function compFG(){
 }
 
 // ── INIT ─────────────────────────────────────────────────────────
-rEqS();lWL();refWL();
+rEqS();lWL();refWL();lPort();refPort();
 rYC(MR.y2,MR.y10);rMom(null,null);rDXY(null);rGBP(null);rSecs(null);
 rVix(VR.cur,VR.prev,VR.v3m,null,true);
 rPC(VR.cur,VR.v3m,true);
