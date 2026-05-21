@@ -294,6 +294,9 @@ var fmtB=n=>n>=1000?(n/1000).toFixed(1)+'T':n.toFixed(0)+'B';
 var pill=(c,t)=>`<span class="pill ${c}">${t}</span>`;
 var ts=()=>new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
 var AS_OF='Feb 28 2026';
+// Safe max/min — avoids Safari "call stack exceeded" with large spread arrays
+var safeMax=(arr)=>arr.reduce((a,b)=>b>a?b:a,arr[0]||0);
+var safeMin=(arr)=>arr.reduce((a,b)=>b<a?b:a,arr[0]||0);
 
 // ── Data freshness tracking ──────────────────────────────────────
 var _fetchTimes={};
@@ -890,11 +893,16 @@ async function loadM7(btn){
   btnLoad(btn);
   var el=$('m7-r');
   if(el)el.innerHTML='<div style="font-size:10px;color:var(--mt);text-align:center;padding:20px">Loading…</div>';
+  try{
   var syms=['SPY',...M7];
   var res=await Promise.allSettled(syms.map(s=>fC(s,400,false)));
   var D={};syms.forEach((s,i)=>D[s]=res[i].value||null);
   var spy=D['SPY'];
   var ok=!!spy;
+  if(!ok){
+    if(el)el.innerHTML='<div class="rnote">⚠ Could not load data. Check connection and tap Refresh.</div>';
+    btnDone(btn,false);return;
+  }
 
   // Relative strength bars
   var rs7=M7.map(tk=>{
@@ -918,8 +926,8 @@ async function loadM7(btn){
     var p=c[c.length-1],pv=c[c.length-2]||p;
     var m50=c.slice(-50).reduce((a,b)=>a+b,0)/Math.min(50,c.length);
     var m200=c.length>=200?c.slice(-200).reduce((a,b)=>a+b,0)/200:c[0];
-    var h=Math.max(...c.slice(-252)),l=Math.min(...c.slice(-252));
-    var ath2y=Math.max(...c.slice(-504));
+    var h=safeMax(c.slice(-252)),l=safeMin(c.slice(-252));
+    var ath2y=safeMax(c.slice(-504));
     var dd=(p-ath2y)/ath2y*100;
     var ddCol=dd>-5?'#00e599':dd>-15?'#ffd93d':dd>-30?'#ff9500':'#ff3b5c';
     var chg=(p-pv)/pv*100;
@@ -957,6 +965,10 @@ async function loadM7(btn){
 
   sv('m7-ts','Updated '+ts());
   btnDone(btn,ok);
+  }catch(e){
+    if(el)el.innerHTML='<div class="rnote">⚠ Error: '+e.message+'</div>';
+    btnDone(btn,false);
+  }
 }
 
 // ── PORTFOLIO ─────────────────────────────────────────────────────
@@ -1016,7 +1028,7 @@ async function refPort(btn){
       var price=c?c[c.length-1]:null;
       var chg=c&&c.length>=2?(c[c.length-1]-c[c.length-2])/c[c.length-2]*100:null;
       var m200=c&&c.length>=200?c.slice(-200).reduce((a,b)=>a+b,0)/200:null;
-      var ath=c&&c.length>=2?Math.max(...c.slice(-504)):null; // 2Y high as ATH proxy
+      var ath=c&&c.length>=2?safeMax(c.slice(-504)):null; // 2Y high as ATH proxy
       var dd=price&&ath?(price-ath)/ath*100:null;
       var a200=price&&m200?price>m200:null;
       var wPct=((p.w/totalW)*100).toFixed(0)+'%';
@@ -1090,8 +1102,8 @@ function wCard(tk,raw,spyRaw){
   var p=c[c.length-1],pv=c[c.length-2]||p;
   var m50=c.slice(-50).reduce((a,b)=>a+b,0)/Math.min(50,c.length);
   var m200=c.length>=200?c.slice(-200).reduce((a,b)=>a+b,0)/200:c[0];
-  var h=Math.max(...c.slice(-252)),l=Math.min(...c.slice(-252));
-  var ath2y=Math.max(...c.slice(-504)); // 2-year high as ATH proxy
+  var h=safeMax(c.slice(-252)),l=safeMin(c.slice(-252));
+  var ath2y=safeMax(c.slice(-504)); // 2-year high as ATH proxy
   var chg=(p-pv)/pv*100,pH=(p-h)/h*100,rng=h>l?Math.round((p-l)/(h-l)*100):50;
   var dd=(p-ath2y)/ath2y*100; // drawdown from 2Y high
   var ddCol=dd>-5?'#00e599':dd>-15?'#ffd93d':dd>-30?'#ff9500':'#ff3b5c';
@@ -1153,7 +1165,7 @@ async function runScan(btn){
     var c=raw.map(x=>typeof x==='object'?x.c:x);
     var vols=raw.map(x=>typeof x==='object'?x.v:0);
     var p=c[c.length-1],prev=c[c.length-2]||p;
-    var h=Math.max(...c.slice(-252)),l=Math.min(...c.slice(-252));
+    var h=safeMax(c.slice(-252)),l=safeMin(c.slice(-252));
     var pH=(p-h)/h*100,pL=(p-l)/l*100,chg=(p-prev)/prev*100;
     var m50=c.slice(-50).reduce((a,b)=>a+b,0)/Math.min(50,c.length);
     var m200=c.length>=200?c.slice(-200).reduce((a,b)=>a+b,0)/200:c[0];
