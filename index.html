@@ -283,7 +283,7 @@
   </div>
   <div class="note" id="fg-i"></div>
   <div class="rts" id="fg-ts"></div>
-  <button class="rbtn" onclick="loadVix();loadMacro();loadCommod();loadSpreads();compFG();">⟳ Recalculate All Signals</button>
+  <button class="rbtn" onclick="recalcFG(this)">⟳ Recalculate All Signals</button>
 </div>
 
 <script>'use strict';
@@ -392,19 +392,20 @@ function pYH(json,withVol){
   }catch(e){return null}
 }
 
-// ── localStorage cache (15-min TTL) ──────────────────────────────
+// ── localStorage cache (15-min TTL, versioned) ───────────────────
 var CACHE_TTL=15*60*1000;
+var CACHE_VER='v3_'; // bump this to invalidate all cached data
 function cGet(key){
   try{
-    var raw=localStorage.getItem('liq_c_'+key);
+    var raw=localStorage.getItem('liq_c_'+CACHE_VER+key);
     if(!raw)return null;
     var obj=JSON.parse(raw);
-    if(Date.now()-obj.ts>CACHE_TTL){localStorage.removeItem('liq_c_'+key);return null;}
+    if(Date.now()-obj.ts>CACHE_TTL){localStorage.removeItem('liq_c_'+CACHE_VER+key);return null;}
     return obj.data;
   }catch(e){return null;}
 }
 function cSet(key,data){
-  try{localStorage.setItem('liq_c_'+key,JSON.stringify({ts:Date.now(),data}));}catch(e){}
+  try{localStorage.setItem('liq_c_'+CACHE_VER+key,JSON.stringify({ts:Date.now(),data}));}catch(e){}
 }
 function cClear(){
   try{Object.keys(localStorage).filter(k=>k.startsWith('liq_c_')).forEach(k=>localStorage.removeItem(k));}catch(e){}
@@ -974,6 +975,7 @@ function rmPort(t){PORT=PORT.filter(p=>p.t!==t);sPort();refPort();}
 function updPortWeight(t,w){var p=PORT.find(x=>x.t===t);if(p){p.w=parseFloat(w)||1;sPort();}}
 
 async function refPort(btn){
+  try{
   lPort();
   var empty=$('port-empty'),summary=$('port-summary');
   if(!PORT.length){
@@ -1058,6 +1060,7 @@ async function refPort(btn){
   }
   sv('port-ts','Updated '+ts());
   btnDone(btn,true);
+  }catch(e){sv('port-ts','Error: '+e.message);btnDone(btn,false);}
 }
 
 // ── WATCHLIST ─────────────────────────────────────────────────────
@@ -1137,9 +1140,13 @@ async function runScan(btn){
   var sb=$('sc-b');if(sb){sb.textContent='SCANNING';sb.className='badge bl'}
   btnLoad(btn);
   sv('sc-h','…');sv('sc-l','…');sv('sc-vh','…');sv('sc-tot','…');
-  // Run all fetches in parallel - ~4x faster than sequential batches
-  var res=await Promise.allSettled(UNI.map(s=>fC(s,400,true)));
-  var all=UNI.map((t,i)=>({t,raw:res[i].value||null}));
+  // Run in batches of 12 — fast but avoids overwhelming proxy/Yahoo
+  var all=[];
+  for(var i=0;i<UNI.length;i+=12){
+    var batch=UNI.slice(i,i+12);
+    var bres=await Promise.allSettled(batch.map(s=>fC(s,400,true)));
+    bres.forEach((r,j)=>all.push({t:batch[j],raw:r.value||null}));
+  }
   var hi=[],lo=[];
   all.forEach(item=>{
     var raw=item.raw;if(!raw||raw.length<30)return;
@@ -1185,6 +1192,14 @@ async function runScan(btn){
   if(lr)lr.innerHTML=lo.length?lo.slice(0,10).map(s=>sRow(s,'l')).join(''):'<div style="font-size:10px;color:var(--mt);text-align:center;padding:10px">None found</div>';
   sv('sc-ts','Updated '+ts());
   btnDone(btn,hi.length>0||lo.length>0);
+}
+
+async function recalcFG(btn){
+  btnLoad(btn);
+  cClear(); // force fresh data for recalculation
+  await Promise.allSettled([loadVix(),loadMacro(),loadCommod(),loadSpreads()]);
+  compFG();
+  btnDone(btn,true);
 }
 
 // ── FEAR/GREED — continuous scoring ──────────────────────────────
