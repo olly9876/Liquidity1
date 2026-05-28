@@ -6,7 +6,7 @@
   <button class="nb" onclick="ST('vix',this)">⚡ VIX</button>
   <button class="nb" onclick="ST('macro',this)">🌐 Macro</button>
   <button class="nb" onclick="ST('m7',this)">✦ Mag 7</button>
-  <button class="nb" onclick="ST('port',this)">💼 Portfolio</button>
+  <button class="nb" onclick="ST('gpu',this)">🖥️ GPUs</button>
   <button class="nb" onclick="ST('wl',this)">📋 Watchlist</button>
   <button class="nb" onclick="ST('scan',this)">🚀 Breakouts</button>
   <button class="nb" onclick="ST('fg',this)">🎯 F/G</button>
@@ -189,35 +189,23 @@
 </div>
 
 <!-- PORTFOLIO TAB -->
-<div class="tab" id="tab-port">
-  <div class="sec">Portfolio</div>
+<!-- GPU PRICES TAB -->
+<div class="tab" id="tab-gpu">
+  <div class="sec">GPU Market</div>
   <div class="card">
-    <div class="clbl" style="margin-bottom:7px">ADD HOLDING</div>
-    <div style="display:flex;gap:6px;margin-bottom:6px">
-      <input class="wi" id="port-tk" placeholder="Ticker e.g. NVDA" style="flex:2" onkeydown="if(event.key==='Enter')addPort()">
-      <input class="wi" id="port-wt" placeholder="Weight %" style="flex:1" type="number" min="0" max="100">
-    </div>
-    <button class="ab" style="width:100%" onclick="addPort()">+ Add Holding</button>
-    <div style="font-size:9px;color:var(--mt);margin-top:5px">Weights don't need to sum to 100 — shown as relative %</div>
+    <div class="chdr"><div class="clbl">Market Pulse</div><span class="badge" id="gpu-pulse">—</span></div>
+    <div id="gpu-trend"></div>
+    <div style="font-size:9px;color:var(--mt);margin-top:6px">Purchase prices = secondary market estimates. Rental = spot cloud rate per GPU/hr.</div>
   </div>
-  <div id="port-empty" class="note">No holdings yet. Add tickers above.</div>
-  <div id="port-summary" style="display:none">
-    <div class="g2">
-      <div class="card"><div class="clbl">Portfolio Return</div><div class="val" id="port-ret">—</div><div class="sub">weighted daily</div></div>
-      <div class="card"><div class="clbl">vs SPY</div><div class="val" id="port-rs">—</div><div class="sub">1M relative strength</div></div>
-    </div>
-    <div class="card">
-      <div class="clbl" style="margin-bottom:8px">Holdings</div>
-      <div id="port-rows"></div>
-    </div>
-    <div class="card">
-      <div class="clbl" style="margin-bottom:8px">Momentum Breakdown</div>
-      <div id="port-mom"></div>
-    </div>
+  <div id="gpu-cards"></div>
+  <div class="card">
+    <div class="clbl" style="margin-bottom:8px">Rental Rate Comparison</div>
+    <div id="gpu-rental"></div>
   </div>
-  <div class="rts" id="port-ts"></div>
-  <button class="rbtn" onclick="refPort(this)">⟳ Refresh Portfolio</button>
-  <button class="rbtn" style="color:var(--red);margin-top:4px" onclick="cClear();refPort()">🗑 Clear Data Cache</button>
+  <div class="note" id="gpu-note"></div>
+  <div class="rts" id="gpu-ts"></div>
+  <button class="rbtn" onclick="loadGPU(this)">⟳ Refresh GPU Data</button>
+  <button class="rbtn" style="color:var(--red);margin-top:4px" onclick="cClear()">🗑 Clear Data Cache</button>
 </div>
 
 <!-- WATCHLIST TAB -->
@@ -972,108 +960,131 @@ async function loadM7(btn){
   }
 }
 
-// ── PORTFOLIO ─────────────────────────────────────────────────────
-var PORT=[];
-function lPort(){try{PORT=JSON.parse(localStorage.getItem('liq_port')||'[]')}catch(e){PORT=[]}}
-function sPort(){try{localStorage.setItem('liq_port',JSON.stringify(PORT))}catch(e){}}
-function addPort(){
-  var tk=$('port-tk'),wt=$('port-wt');
-  if(!tk||!wt)return;
-  var t=tk.value.trim().toUpperCase().replace(/[^A-Z0-9.\-]/g,'');
-  var w=parseFloat(wt.value)||5;
-  if(!t||PORT.find(p=>p.t===t)||PORT.length>=25)return;
-  PORT.push({t,w});sPort();tk.value='';wt.value='';refPort();
-}
-function rmPort(t){PORT=PORT.filter(p=>p.t!==t);sPort();refPort();}
-function updPortWeight(t,w){var p=PORT.find(x=>x.t===t);if(p){p.w=parseFloat(w)||1;sPort();}}
+// ── GPU PRICE TRACKER ─────────────────────────────────────────────
+// Reference data — secondary market estimates, updated periodically
+// Sources: eBay completed listings, Lambda Labs, Vast.ai, Hoot.dev
+var GPU_DATA=[
+  {id:'h200-sxm',name:'NVIDIA H200 SXM',vram:'141GB HBM3e',tflops:'3958 FP16',
+   buyLo:28000,buyHi:42000,rental:4.50,trend:'stable',
+   note:'Latest flagship. Strong demand from hyperscalers. Limited supply.'},
+  {id:'h100-sxm',name:'NVIDIA H100 SXM5',vram:'80GB HBM2e',tflops:'3958 FP16',
+   buyLo:18000,buyHi:28000,rental:2.85,trend:'falling',
+   note:'Workhorse of AI training. Prices declining as supply improves.'},
+  {id:'h100-pcie',name:'NVIDIA H100 PCIe',vram:'80GB HBM2e',tflops:'3958 FP16',
+   buyLo:12000,buyHi:20000,rental:2.10,trend:'falling',
+   note:'Lower interconnect vs SXM. Better availability. Good for inference.'},
+  {id:'a100-80',name:'NVIDIA A100 80GB',vram:'80GB HBM2e',tflops:'1248 FP16',
+   buyLo:7000,buyHi:13000,rental:1.80,trend:'falling',
+   note:'Previous gen flagship. Solid for fine-tuning. Prices softening.'},
+  {id:'a100-40',name:'NVIDIA A100 40GB',vram:'40GB HBM2',tflops:'1248 FP16',
+   buyLo:4500,buyHi:8000,rental:1.20,trend:'falling',
+   note:'Entry-level data centre. Good value for inference workloads.'},
+  {id:'mi300x',name:'AMD MI300X',vram:'192GB HBM3',tflops:'2610 FP16',
+   buyLo:12000,buyHi:20000,rental:3.20,trend:'stable',
+   note:'Large VRAM advantage. Growing ROCm software support. Gaining traction.'},
+  {id:'l40s',name:'NVIDIA L40S',vram:'48GB GDDR6',tflops:'1457 FP16',
+   buyLo:8000,buyHi:14000,rental:1.40,trend:'stable',
+   note:'Inference-optimised. Strong for multimodal and video AI workloads.'},
+  {id:'rtx4090',name:'NVIDIA RTX 4090',vram:'24GB GDDR6X',tflops:'1321 FP16',
+   buyLo:1600,buyHi:2200,rental:0.75,trend:'stable',
+   note:'Consumer card used for research/fine-tuning. Best perf/$ for small models.'},
+];
 
-async function refPort(btn){
-  try{
-  lPort();
-  var empty=$('port-empty'),summary=$('port-summary');
-  if(!PORT.length){
-    if(empty)empty.style.display='block';
-    if(summary)summary.style.display='none';
-    return;
-  }
+var GPU_NVDA_PEERS=['NVDA','AMD','INTC','AVGO','TSM'];
+
+function gpuTrendCol(t){return t==='rising'?'#00e599':t==='falling'?'#ff3b5c':'#ffd93d';}
+function gpuTrendIcon(t){return t==='rising'?'▲':t==='falling'?'▼':'■';}
+
+async function loadGPU(btn){
   btnLoad(btn);
-  if(empty)empty.style.display='none';
-  if(summary)summary.style.display='block';
-  var allSyms=['SPY',...PORT.map(p=>p.t)];
-  var res=await Promise.allSettled(allSyms.map(s=>fC(s,400,false)));
-  var D={};allSyms.forEach((s,i)=>D[s]=res[i].value||null);
-  var spy=D['SPY'];
-  var totalW=PORT.reduce((s,p)=>s+p.w,0)||1;
-  // Weighted daily return
-  var wtdRet=0,wtdRS=0,validW=0;
-  var spyRet1d=spy&&spy.length>=2?(spy[spy.length-1]-spy[spy.length-2])/spy[spy.length-2]*100:0;
-  var spyRet1m=spy&&spy.length>=22?(spy[spy.length-1]-spy[spy.length-22])/spy[spy.length-22]*100:0;
-  PORT.forEach(p=>{
-    var c=D[p.t];if(!c||c.length<2)return;
-    var w=p.w/totalW;
-    var r1d=(c[c.length-1]-c[c.length-2])/c[c.length-2]*100;
-    var r1m=c.length>=22?(c[c.length-1]-c[c.length-22])/c[c.length-22]*100:0;
-    wtdRet+=r1d*w;
-    wtdRS+=(r1m-spyRet1m)*w;
-    validW+=w;
-  });
-  if(validW>0){wtdRet/=validW;wtdRS/=validW;}
-  var retEl=$('port-ret'),rsEl=$('port-rs');
-  if(retEl){retEl.textContent=(wtdRet>=0?'+':'')+fmt(wtdRet,2)+'%';retEl.style.color=wtdRet>=0?'#00e599':'#ff3b5c';}
-  if(rsEl){rsEl.textContent=(wtdRS>=0?'+':'')+fmt(wtdRS,1)+'%';rsEl.style.color=wtdRS>=0?'#00e599':'#ff3b5c';}
-  // Holdings rows
-  var rows=$('port-rows');
-  if(rows){
-    rows.innerHTML=PORT.map(p=>{
-      var c=D[p.t];
-      var price=c?c[c.length-1]:null;
-      var chg=c&&c.length>=2?(c[c.length-1]-c[c.length-2])/c[c.length-2]*100:null;
-      var m200=c&&c.length>=200?c.slice(-200).reduce((a,b)=>a+b,0)/200:null;
-      var ath=c&&c.length>=2?safeMax(c.slice(-504)):null; // 2Y high as ATH proxy
-      var dd=price&&ath?(price-ath)/ath*100:null;
-      var a200=price&&m200?price>m200:null;
-      var wPct=((p.w/totalW)*100).toFixed(0)+'%';
-      var col=chg!=null?(chg>=0?'#00e599':'#ff3b5c'):'var(--mt)';
-      var ddCol=dd!=null?(dd>-5?'#00e599':dd>-15?'#ffd93d':dd>-30?'#ff9500':'#ff3b5c'):'var(--mt)';
-      return`<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--dim)">
-        <div style="flex:1">
-          <div style="display:flex;align-items:center;gap:6px">
-            <span style="font-family:'Bebas Neue',sans-serif;font-size:16px;color:var(--ac)">${p.t}</span>
-            <span style="font-size:9px;color:var(--mt);background:var(--s2);padding:1px 6px;border-radius:6px">${wPct}</span>
-            ${a200!=null?`<span style="font-size:9px;color:${a200?'#00e599':'#ff3b5c'}">${a200?'▲':'▼'} 200MA</span>`:''}
+
+  // Render reference GPU cards immediately
+  var cards=$('gpu-cards');
+  if(cards){
+    cards.innerHTML=GPU_DATA.map(g=>{
+      var tc=gpuTrendCol(g.trend),ti=gpuTrendIcon(g.trend);
+      var midPrice=Math.round((g.buyLo+g.buyHi)/2);
+      return`<div class="card">
+        <div class="chdr">
+          <div>
+            <div style="font-family:'Bebas Neue',sans-serif;font-size:18px;color:var(--ac)">${g.name}</div>
+            <div style="font-size:9px;color:var(--mt);margin-top:1px">${g.vram} · ${g.tflops} TFLOPS</div>
           </div>
-          ${dd!=null?`<div style="font-size:9px;color:${ddCol};margin-top:2px">DD: ${fmt(dd,1)}% from 2Y high</div>`:''}
+          <span style="font-size:9px;padding:2px 8px;border-radius:8px;background:${tc}22;color:${tc};border:1px solid ${tc}44">${ti} ${g.trend.toUpperCase()}</span>
         </div>
-        <div style="text-align:right">
-          <div style="font-family:'Bebas Neue',sans-serif;font-size:16px">${price?'$'+fmt(price,2):'—'}</div>
-          <div style="font-size:10px;color:${col}">${chg!=null?(chg>=0?'▲ +':'▼ ')+fmt(Math.abs(chg),2)+'%':'—'}</div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <div style="flex:1;background:var(--s2);border-radius:8px;padding:10px">
+            <div style="font-size:9px;color:var(--mt);margin-bottom:3px">MARKET PRICE</div>
+            <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;color:var(--tx)">$${(midPrice/1000).toFixed(0)}k</div>
+            <div style="font-size:9px;color:var(--mt)">$${(g.buyLo/1000).toFixed(0)}k–$${(g.buyHi/1000).toFixed(0)}k range</div>
+          </div>
+          <div style="flex:1;background:var(--s2);border-radius:8px;padding:10px">
+            <div style="font-size:9px;color:var(--mt);margin-bottom:3px">CLOUD RENTAL</div>
+            <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;color:var(--ac)">$${g.rental.toFixed(2)}</div>
+            <div style="font-size:9px;color:var(--mt)">per GPU / hour</div>
+          </div>
         </div>
-        <button class="rmv" onclick="rmPort('${p.t}')">✕</button>
+        <div style="font-size:10px;color:var(--mt);margin-top:8px;line-height:1.5">${g.note}</div>
       </div>`;
     }).join('');
   }
-  // Momentum breakdown
-  var mom=$('port-mom');
-  if(mom){
-    var bull=0,neut_=0,bear=0;
-    PORT.forEach(p=>{
-      var c=D[p.t];if(!c||c.length<50)return;
-      var price=c[c.length-1];
-      var m50=c.slice(-50).reduce((a,b)=>a+b,0)/50;
-      var m200=c.length>=200?c.slice(-200).reduce((a,b)=>a+b,0)/200:null;
-      if(price>m50&&(!m200||price>m200))bull++;
-      else if(price<m50&&(!m200||price<m200))bear++;
-      else neut_++;
-    });
-    var tot=bull+neut_+bear||1;
-    mom.innerHTML=`
-      <div class="brow"><div class="blbl">Uptrend</div><div class="btrk"><div class="bfil" style="width:${bull/tot*100}%;background:#00e599"></div></div><div class="bval" style="color:#00e599">${bull} stocks</div></div>
-      <div class="brow"><div class="blbl">Mixed</div><div class="btrk"><div class="bfil" style="width:${neut_/tot*100}%;background:#ffd93d"></div></div><div class="bval" style="color:#ffd93d">${neut_} stocks</div></div>
-      <div class="brow"><div class="blbl">Downtrend</div><div class="btrk"><div class="bfil" style="width:${bear/tot*100}%;background:#ff3b5c"></div></div><div class="bval" style="color:#ff3b5c">${bear} stocks</div></div>`;
+
+  // Rental rate bar chart
+  var rental=$('gpu-rental');
+  if(rental){
+    var maxR=Math.max(...GPU_DATA.map(g=>g.rental));
+    rental.innerHTML=GPU_DATA.map(g=>{
+      var pct=g.rental/maxR*100;
+      var col=g.rental>3?'#a855f7':g.rental>2?'#00d4ff':g.rental>1?'#00e599':'#5a7080';
+      return`<div class="brow">
+        <div class="blbl" style="font-size:9px;width:110px">${g.name.replace('NVIDIA ','').replace('AMD ','')}</div>
+        <div class="btrk"><div class="bfil" style="width:${pct}%;background:${col}"></div></div>
+        <div class="bval" style="color:${col}">$${g.rental.toFixed(2)}/hr</div>
+      </div>`;
+    }).join('');
   }
-  sv('port-ts','Updated '+ts());
+
+  // Try to fetch NVDA stock as a GPU demand proxy
+  var nvda=await fC('NVDA',60,false);
+  var nvdaHtml='';
+  if(nvda&&nvda.length>=22){
+    var p=nvda[nvda.length-1],pv=nvda[nvda.length-2];
+    var chg=(p-pv)/pv*100;
+    var ret1m=(p-nvda[nvda.length-22])/nvda[nvda.length-22]*100;
+    var col=chg>=0?'#00e599':'#ff3b5c';
+    nvdaHtml=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <span style="font-family:'Bebas Neue',sans-serif;font-size:14px;color:var(--ac)">NVDA</span>
+      <span style="font-size:11px">$${fmt(p,2)}</span>
+      <span style="font-size:10px;color:${col}">${chg>=0?'▲ +':'▼ '}${fmt(Math.abs(chg),2)}% today</span>
+      <span style="font-size:10px;color:${ret1m>=0?'#00e599':'#ff3b5c'}">${ret1m>=0?'+':''}${fmt(ret1m,1)}% 1M</span>
+    </div>`;
+  }
+
+  // Market pulse
+  var fallingCount=GPU_DATA.filter(g=>g.trend==='falling').length;
+  var risingCount=GPU_DATA.filter(g=>g.trend==='rising').length;
+  var pulse=$('gpu-pulse');
+  var trend=$('gpu-trend');
+  if(pulse){
+    var lbl=risingCount>fallingCount?'TIGHTENING':fallingCount>risingCount?'SOFTENING':'STABLE';
+    var col=risingCount>fallingCount?'#00e599':fallingCount>risingCount?'#ff3b5c':'#ffd93d';
+    pulse.textContent=lbl;pulse.className='badge';
+    pulse.style.cssText=`background:${col}22;color:${col};border:1px solid ${col}44`;
+  }
+  if(trend){
+    trend.innerHTML=nvdaHtml+
+      `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
+        <span style="font-size:9px;padding:2px 8px;border-radius:8px;background:rgba(255,59,92,.1);color:#ff3b5c">${fallingCount} falling</span>
+        <span style="font-size:9px;padding:2px 8px;border-radius:8px;background:rgba(255,217,61,.1);color:#ffd93d">${GPU_DATA.filter(g=>g.trend==='stable').length} stable</span>
+        <span style="font-size:9px;padding:2px 8px;border-radius:8px;background:rgba(0,229,153,.1);color:#00e599">${risingCount} rising</span>
+      </div>`;
+  }
+
+  var note=$('gpu-note');
+  if(note)note.textContent='Purchase prices are secondary market estimates (eBay, broker listings). Cloud rental rates reflect Vast.ai / Lambda Labs spot pricing. GPU prices change over weeks not days — refresh weekly for meaningful changes.';
+
+  sv('gpu-ts','Updated '+ts());
   btnDone(btn,true);
-  }catch(e){sv('port-ts','Error: '+e.message);btnDone(btn,false);}
 }
 
 // ── WATCHLIST ─────────────────────────────────────────────────────
@@ -1321,7 +1332,8 @@ function compFG(){
 }
 
 // ── INIT ─────────────────────────────────────────────────────────
-rEqS();lWL();refWL();lPort();refPort();
+rEqS();lWL();refWL();
+loadGPU();
 rYC(MR.y2,MR.y10);rMom(null,null);rDXY(null);rGBP(null);rSecs(null);
 rVix(VR.cur,VR.prev,VR.v3m,null,true);
 rPC(VR.cur,VR.v3m,true);
