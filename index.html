@@ -332,6 +332,8 @@ function ST(n,b){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.nb').forEach(x=>x.classList.remove('active'));
   var t=$('tab-'+n);if(t)t.classList.add('active');if(b)b.classList.add('active');
+  // Force SVG repaint when F/G tab opened
+  if(n==='fg'){setTimeout(compFG,50);}
 }
 
 function spark(id,data,col){
@@ -571,11 +573,15 @@ async function loadSpreads(btn){
     markFresh('spreads-cs');live=true;
   }else{rCreditSpreads(CR.hy,CR.ig,null,true)}
 
-  // MOVE proxy from TLT volatility
+  // MOVE proxy from TNX daily bps moves (absolute, not percentage)
   if(tnx&&tnx.length>=20){
-    var returns=tnx.slice(-20).map((v,i,a)=>i>0?(v-a[i-1])/a[i-1]*100:0).slice(1);
-    var std=Math.sqrt(returns.reduce((s,r)=>s+r*r,0)/returns.length)*Math.sqrt(252);
-    var movePx=Math.round(std*12); // rough scale
+    // Calculate daily moves in basis points (yield × 100)
+    var bpsMoves=tnx.slice(-20).map((v,i,a)=>i>0?Math.abs((v-a[i-1])*100):0).slice(1);
+    var avgBps=bpsMoves.reduce((a,b)=>a+b,0)/bpsMoves.length;
+    // MOVE ≈ annualised daily bps std × scaling factor
+    var variance=bpsMoves.reduce((s,v)=>s+(v-avgBps)*(v-avgBps),0)/bpsMoves.length;
+    var movePx=Math.round(Math.sqrt(variance)*Math.sqrt(252)*0.8+avgBps*8);
+    movePx=Math.max(50,Math.min(200,movePx)); // sensible bounds
     rMove(movePx,movePx,tnx.slice(-30),false);
     markFresh('spreads-move');
   }else{rMove(CR.move,CR.move,null,true)}
@@ -1229,6 +1235,8 @@ async function recalcFG(btn){
 // ── FEAR/GREED — continuous scoring ──────────────────────────────
 function clamp(v,mn,mx){return Math.max(mn,Math.min(mx,v));}
 
+var _lastFGScore=null;
+
 function compFG(){
   try{
     var r=window._fg;
@@ -1300,7 +1308,15 @@ function compFG(){
     sv('fg-v',score);
     var lbl=score>=75?'EXTREME GREED':score>=60?'GREED':score>=40?'NEUTRAL':score>=25?'FEAR':'EXTREME FEAR';
     var col=score>=60?'#00e599':score>=40?'#ffd93d':'#ff3b5c';
-    var fl=$('fg-l');if(fl){fl.textContent=lbl;fl.style.color=col;}
+    // Show change from previous score
+    var changeHtml='';
+    if(_lastFGScore!==null&&_lastFGScore!==score){
+      var diff=score-_lastFGScore;
+      var dc=diff>0?'#00e599':'#ff3b5c';
+      changeHtml=`<div style="font-size:11px;color:${dc};margin-top:2px">${diff>0?'▲ +':'▼ '}${diff} from ${_lastFGScore}</div>`;
+    }
+    _lastFGScore=score;
+    var fl=$('fg-l');if(fl){fl.innerHTML=lbl+(changeHtml?'<br>'+changeHtml:'');fl.style.color=col;}
 
     var fc=$('fg-c');
     if(fc){
@@ -1352,6 +1368,7 @@ setInterval(loadCommod,180000);
 setInterval(loadSpreads,120000);
 setInterval(loadMacro,120000);
 setInterval(loadM7,300000);
+setInterval(compFG,30000); // recheck F/G every 30s in case signals updated
 // Age badge refresh every 60s
 setInterval(()=>{
   [['card-cs','spreads-cs'],['card-move','spreads-move'],['card-vix','vix'],['card-vix3m','vix'],
