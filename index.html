@@ -202,6 +202,10 @@
     <div class="clbl" style="margin-bottom:8px">Rental Rate Comparison</div>
     <div id="gpu-rental"></div>
   </div>
+  <div class="card" id="gpu-demand-card">
+    <div class="chdr"><div class="clbl">AI Chip Demand Indicators</div><span class="badge bo" id="gpu-demand-b">LIVE</span></div>
+    <div id="gpu-demand"></div>
+  </div>
   <div class="note" id="gpu-note"></div>
   <div class="rts" id="gpu-ts"></div>
   <button class="rbtn" onclick="loadGPU(this)">⟳ Refresh GPU Data</button>
@@ -971,28 +975,37 @@ async function loadM7(btn){
 // Sources: eBay completed listings, Lambda Labs, Vast.ai, Hoot.dev
 var GPU_DATA=[
   {id:'h200-sxm',name:'NVIDIA H200 SXM',vram:'141GB HBM3e',tflops:'3958 FP16',
-   buyLo:28000,buyHi:42000,rental:4.50,trend:'stable',
+   buyLo:28000,buyHi:42000,rental:4.50,trend:'stable',verified:'May 2026',
+   // Monthly midpoint prices: Oct25→May26
+   history:[38000,37000,36000,35500,35000,34000,35000,35000],
    note:'Latest flagship. Strong demand from hyperscalers. Limited supply.'},
   {id:'h100-sxm',name:'NVIDIA H100 SXM5',vram:'80GB HBM2e',tflops:'3958 FP16',
-   buyLo:18000,buyHi:28000,rental:2.85,trend:'falling',
+   buyLo:18000,buyHi:28000,rental:2.85,trend:'falling',verified:'May 2026',
+   history:[28000,26000,24000,23000,22000,21000,23000,23000],
    note:'Workhorse of AI training. Prices declining as supply improves.'},
   {id:'h100-pcie',name:'NVIDIA H100 PCIe',vram:'80GB HBM2e',tflops:'3958 FP16',
-   buyLo:12000,buyHi:20000,rental:2.10,trend:'falling',
+   buyLo:12000,buyHi:20000,rental:2.10,trend:'falling',verified:'May 2026',
+   history:[19000,17000,16000,15000,14500,14000,16000,16000],
    note:'Lower interconnect vs SXM. Better availability. Good for inference.'},
   {id:'a100-80',name:'NVIDIA A100 80GB',vram:'80GB HBM2e',tflops:'1248 FP16',
-   buyLo:7000,buyHi:13000,rental:1.80,trend:'falling',
+   buyLo:7000,buyHi:13000,rental:1.80,trend:'falling',verified:'May 2026',
+   history:[14000,13000,12000,11000,10500,10000,10000,10000],
    note:'Previous gen flagship. Solid for fine-tuning. Prices softening.'},
   {id:'a100-40',name:'NVIDIA A100 40GB',vram:'40GB HBM2',tflops:'1248 FP16',
-   buyLo:4500,buyHi:8000,rental:1.20,trend:'falling',
+   buyLo:4500,buyHi:8000,rental:1.20,trend:'falling',verified:'May 2026',
+   history:[8000,7000,6500,6000,6000,6000,6250,6250],
    note:'Entry-level data centre. Good value for inference workloads.'},
   {id:'mi300x',name:'AMD MI300X',vram:'192GB HBM3',tflops:'2610 FP16',
-   buyLo:12000,buyHi:20000,rental:3.20,trend:'stable',
+   buyLo:12000,buyHi:20000,rental:3.20,trend:'stable',verified:'May 2026',
+   history:[17000,17000,16500,16000,16000,16000,16000,16000],
    note:'Large VRAM advantage. Growing ROCm software support. Gaining traction.'},
   {id:'l40s',name:'NVIDIA L40S',vram:'48GB GDDR6',tflops:'1457 FP16',
-   buyLo:8000,buyHi:14000,rental:1.40,trend:'stable',
+   buyLo:8000,buyHi:14000,rental:1.40,trend:'stable',verified:'May 2026',
+   history:[12000,11500,11000,11000,11000,11000,11000,11000],
    note:'Inference-optimised. Strong for multimodal and video AI workloads.'},
   {id:'rtx4090',name:'NVIDIA RTX 4090',vram:'24GB GDDR6X',tflops:'1321 FP16',
-   buyLo:1600,buyHi:2200,rental:0.75,trend:'stable',
+   buyLo:1600,buyHi:2200,rental:0.75,trend:'stable',verified:'May 2026',
+   history:[1900,1850,1800,1800,1800,1800,1900,1900],
    note:'Consumer card used for research/fine-tuning. Best perf/$ for small models.'},
 ];
 
@@ -1004,33 +1017,66 @@ function gpuTrendIcon(t){return t==='rising'?'▲':t==='falling'?'▼':'■';}
 async function loadGPU(btn){
   btnLoad(btn);
 
-  // Render reference GPU cards immediately
+  // Inline sparkline for GPU price history
+  function gpuSpark(history,col){
+    if(!history||history.length<2)return'';
+    var W=120,H=28,P=2;
+    var mn=safeMin(history),mx=safeMax(history),rng=(mx-mn)||1;
+    var pts=history.map((v,i)=>[(i/(history.length-1))*W,H-P-((v-mn)/rng)*(H-P*2)]);
+    var ln=pts.map(p=>p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ');
+    var ar='M0,'+H+pts.map(p=>' L'+p[0].toFixed(1)+','+p[1].toFixed(1)).join('')+' L'+W+','+H+' Z';
+    var id='gsp'+Math.random().toString(36).slice(2,6);
+    return`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="display:block;margin-top:6px">
+      <defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="${col}" stop-opacity=".3"/>
+        <stop offset="100%" stop-color="${col}" stop-opacity=".02"/>
+      </linearGradient></defs>
+      <path d="${ar}" fill="url(#${id})"/>
+      <polyline points="${ln}" fill="none" stroke="${col}" stroke-width="1.5" stroke-linejoin="round"/>
+      <circle cx="${pts[pts.length-1][0].toFixed(1)}" cy="${pts[pts.length-1][1].toFixed(1)}" r="2.5" fill="${col}"/>
+    </svg>`;
+  }
+
+  // Render GPU cards with sparklines
   var cards=$('gpu-cards');
   if(cards){
     cards.innerHTML=GPU_DATA.map(g=>{
       var tc=gpuTrendCol(g.trend),ti=gpuTrendIcon(g.trend);
       var midPrice=Math.round((g.buyLo+g.buyHi)/2);
+      // Price change from 3 months ago vs now
+      var h=g.history,hLen=h?h.length:0;
+      var priceChg=hLen>=4?((h[hLen-1]-h[hLen-4])/h[hLen-4]*100):0;
+      var chgCol=priceChg>2?'#00e599':priceChg<-2?'#ff3b5c':'#ffd93d';
+      var sparkHtml=g.history?gpuSpark(g.history,tc):'';
       return`<div class="card">
         <div class="chdr">
           <div>
             <div style="font-family:'Bebas Neue',sans-serif;font-size:18px;color:var(--ac)">${g.name}</div>
             <div style="font-size:9px;color:var(--mt);margin-top:1px">${g.vram} · ${g.tflops} TFLOPS</div>
           </div>
-          <span style="font-size:9px;padding:2px 8px;border-radius:8px;background:${tc}22;color:${tc};border:1px solid ${tc}44">${ti} ${g.trend.toUpperCase()}</span>
+          <div style="text-align:right">
+            <span style="font-size:9px;padding:2px 8px;border-radius:8px;background:${tc}22;color:${tc};border:1px solid ${tc}44">${ti} ${g.trend.toUpperCase()}</span>
+            <div style="font-size:8px;color:var(--mt);margin-top:3px">verified ${g.verified}</div>
+          </div>
         </div>
         <div style="display:flex;gap:8px;margin-top:8px">
           <div style="flex:1;background:var(--s2);border-radius:8px;padding:10px">
             <div style="font-size:9px;color:var(--mt);margin-bottom:3px">MARKET PRICE</div>
             <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;color:var(--tx)">$${(midPrice/1000).toFixed(0)}k</div>
             <div style="font-size:9px;color:var(--mt)">$${(g.buyLo/1000).toFixed(0)}k–$${(g.buyHi/1000).toFixed(0)}k range</div>
+            ${hLen>=4?`<div style="font-size:9px;color:${chgCol};margin-top:3px">${priceChg>=0?'▲ +':'▼ '}${fmt(Math.abs(priceChg),1)}% vs 3M ago</div>`:''}
           </div>
           <div style="flex:1;background:var(--s2);border-radius:8px;padding:10px">
             <div style="font-size:9px;color:var(--mt);margin-bottom:3px">CLOUD RENTAL</div>
             <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;color:var(--ac)">$${g.rental.toFixed(2)}</div>
             <div style="font-size:9px;color:var(--mt)">per GPU / hour</div>
+            <div style="font-size:9px;color:var(--mt);margin-top:3px">~$${(g.rental*24*30).toFixed(0)}/mo</div>
           </div>
         </div>
-        <div style="font-size:10px;color:var(--mt);margin-top:8px;line-height:1.5">${g.note}</div>
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div style="font-size:10px;color:var(--mt);margin-top:8px;line-height:1.5;flex:1">${g.note}</div>
+          ${sparkHtml}
+        </div>
       </div>`;
     }).join('');
   }
@@ -1038,7 +1084,7 @@ async function loadGPU(btn){
   // Rental rate bar chart
   var rental=$('gpu-rental');
   if(rental){
-    var maxR=Math.max(...GPU_DATA.map(g=>g.rental));
+    var maxR=safeMax(GPU_DATA.map(g=>g.rental));
     rental.innerHTML=GPU_DATA.map(g=>{
       var pct=g.rental/maxR*100;
       var col=g.rental>3?'#a855f7':g.rental>2?'#00d4ff':g.rental>1?'#00e599':'#5a7080';
@@ -1050,27 +1096,48 @@ async function loadGPU(btn){
     }).join('');
   }
 
-  // Try to fetch NVDA stock as a GPU demand proxy
-  var nvda=await fC('NVDA',60,false);
-  var nvdaHtml='';
-  if(nvda&&nvda.length>=22){
-    var p=nvda[nvda.length-1],pv=nvda[nvda.length-2];
-    var chg=(p-pv)/pv*100;
-    var ret1m=(p-nvda[nvda.length-22])/nvda[nvda.length-22]*100;
-    var col=chg>=0?'#00e599':'#ff3b5c';
-    nvdaHtml=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-      <span style="font-family:'Bebas Neue',sans-serif;font-size:14px;color:var(--ac)">NVDA</span>
-      <span style="font-size:11px">$${fmt(p,2)}</span>
-      <span style="font-size:10px;color:${col}">${chg>=0?'▲ +':'▼ '}${fmt(Math.abs(chg),2)}% today</span>
-      <span style="font-size:10px;color:${ret1m>=0?'#00e599':'#ff3b5c'}">${ret1m>=0?'+':''}${fmt(ret1m,1)}% 1M</span>
-    </div>`;
+  // Fetch live demand indicator stocks: NVDA, AMD, TSM
+  var demandSyms=['NVDA','AMD','TSM'];
+  var demandRes=await Promise.allSettled(demandSyms.map(s=>fC(s,60,false)));
+  var demandData={};demandSyms.forEach((s,i)=>demandData[s]=demandRes[i].value||null);
+
+  var demandEl=$('gpu-demand');
+  var anyLive=false;
+  if(demandEl){
+    demandEl.innerHTML=demandSyms.map(sym=>{
+      var c=demandData[sym];
+      if(!c||c.length<22)return`<div style="padding:8px 0;border-bottom:1px solid var(--dim);font-size:10px;color:var(--mt)">${sym} — loading…</div>`;
+      anyLive=true;
+      var p=c[c.length-1],pv=c[c.length-2];
+      var chg=(p-pv)/pv*100;
+      var ret1m=(p-c[c.length-22])/c[c.length-22]*100;
+      var m200=c.length>=200?c.slice(-200).reduce((a,b)=>a+b,0)/200:null;
+      var a200=m200?p>m200:null;
+      var chgCol=chg>=0?'#00e599':'#ff3b5c';
+      var labels={NVDA:'GPU leader · AI chips',AMD:'Competitor · MI300X',TSM:'Chip foundry · NVDA supplier'};
+      return`<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--dim)">
+        <div style="flex:1">
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="font-family:'Bebas Neue',sans-serif;font-size:16px;color:var(--ac)">${sym}</span>
+            ${a200!=null?`<span style="font-size:9px;color:${a200?'#00e599':'#ff3b5c'}">${a200?'▲':'▼'} 200MA</span>`:''}
+          </div>
+          <div style="font-size:9px;color:var(--mt)">${labels[sym]||''}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:16px">$${fmt(p,2)}</div>
+          <div style="font-size:10px;color:${chgCol}">${chg>=0?'▲ +':'▼ '}${fmt(Math.abs(chg),2)}% today</div>
+          <div style="font-size:9px;color:${ret1m>=0?'#00e599':'#ff3b5c'}">${ret1m>=0?'+':''}${fmt(ret1m,1)}% 1M</div>
+        </div>
+      </div>`;
+    }).join('');
+    var db=$('gpu-demand-b');
+    if(db){db.textContent=anyLive?'LIVE':'REF';db.className='badge '+(anyLive?'bl':'br');}
   }
 
   // Market pulse
   var fallingCount=GPU_DATA.filter(g=>g.trend==='falling').length;
   var risingCount=GPU_DATA.filter(g=>g.trend==='rising').length;
-  var pulse=$('gpu-pulse');
-  var trend=$('gpu-trend');
+  var pulse=$('gpu-pulse'),trend=$('gpu-trend');
   if(pulse){
     var lbl=risingCount>fallingCount?'TIGHTENING':fallingCount>risingCount?'SOFTENING':'STABLE';
     var col=risingCount>fallingCount?'#00e599':fallingCount>risingCount?'#ff3b5c':'#ffd93d';
@@ -1078,16 +1145,15 @@ async function loadGPU(btn){
     pulse.style.cssText=`background:${col}22;color:${col};border:1px solid ${col}44`;
   }
   if(trend){
-    trend.innerHTML=nvdaHtml+
-      `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
-        <span style="font-size:9px;padding:2px 8px;border-radius:8px;background:rgba(255,59,92,.1);color:#ff3b5c">${fallingCount} falling</span>
-        <span style="font-size:9px;padding:2px 8px;border-radius:8px;background:rgba(255,217,61,.1);color:#ffd93d">${GPU_DATA.filter(g=>g.trend==='stable').length} stable</span>
-        <span style="font-size:9px;padding:2px 8px;border-radius:8px;background:rgba(0,229,153,.1);color:#00e599">${risingCount} rising</span>
-      </div>`;
+    trend.innerHTML=`<div style="display:flex;gap:6px;flex-wrap:wrap">
+      <span style="font-size:9px;padding:2px 8px;border-radius:8px;background:rgba(255,59,92,.1);color:#ff3b5c">${fallingCount} falling</span>
+      <span style="font-size:9px;padding:2px 8px;border-radius:8px;background:rgba(255,217,61,.1);color:#ffd93d">${GPU_DATA.filter(g=>g.trend==='stable').length} stable</span>
+      <span style="font-size:9px;padding:2px 8px;border-radius:8px;background:rgba(0,229,153,.1);color:#00e599">${risingCount} rising</span>
+    </div>`;
   }
 
   var note=$('gpu-note');
-  if(note)note.textContent='Purchase prices are secondary market estimates (eBay, broker listings). Cloud rental rates reflect Vast.ai / Lambda Labs spot pricing. GPU prices change over weeks not days — refresh weekly for meaningful changes.';
+  if(note)note.textContent='Purchase prices: secondary market estimates (eBay, broker listings). Rental rates: Vast.ai / Lambda Labs spot pricing. Price history: monthly midpoints Oct 2025–May 2026. Sources verified May 2026.';
 
   sv('gpu-ts','Updated '+ts());
   btnDone(btn,true);
