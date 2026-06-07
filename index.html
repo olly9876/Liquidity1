@@ -978,6 +978,28 @@ async function loadM7(btn){
     return`<div class="brow"><div class="blbl" style="font-size:10px;width:60px">${s.tk}</div><div class="btrk"><div class="bfil" style="width:${w}%;background:${col}"></div></div><div style="text-align:right;flex-shrink:0;min-width:80px"><span style="font-size:10px;color:${col}">${s.rs>=0?'+':''}${s.rs}% vs SPY</span></div></div>`;
   }).join('');
 
+  // Fetch earnings first, then render cards with full data
+  var earnData={};
+  var earnRes=await Promise.allSettled(M7.map(tk=>{
+    var url='https://query1.finance.yahoo.com/v10/finance/quoteSummary/'+tk+'?modules=earnings';
+    return tF(PROXY+encodeURIComponent(url),10000).then(r=>r.ok?r.json():null).catch(()=>null);
+  }));
+  M7.forEach((tk,i)=>{
+    try{
+      var j=earnRes[i].value;
+      if(!j)return;
+      var q=j.quoteSummary.result[0].earnings.earningsChart.quarterly;
+      if(q&&q.length){
+        var last=q[q.length-1];
+        earnData[tk]={
+          date:last.date,
+          actual:last.actual?last.actual.raw:null,
+          estimate:last.estimate?last.estimate.raw:null
+        };
+      }
+    }catch(e){}
+  });
+
   // Individual cards
   if(el)el.innerHTML=M7.map(tk=>{
     var c=D[tk];
@@ -1030,28 +1052,6 @@ async function loadM7(btn){
       ${pH>=-3?'<span class="pill pb">🚀 Near High</span>':''}
     </div></div>`;
   }).join('');
-
-  // Fetch recent earnings surprises for each M7 stock
-  var earnRes=await Promise.allSettled(M7.map(tk=>{
-    var url='https://query1.finance.yahoo.com/v10/finance/quoteSummary/'+tk+'?modules=earnings';
-    return tF(PROXY+encodeURIComponent(url),10000).then(r=>r.ok?r.json():null).catch(()=>null);
-  }));
-  var earnData={};
-  M7.forEach((tk,i)=>{
-    try{
-      var j=earnRes[i].value;
-      if(!j)return;
-      var q=j.quoteSummary.result[0].earnings.earningsChart.quarterly;
-      if(q&&q.length){
-        var last=q[q.length-1];
-        earnData[tk]={
-          date:last.date,
-          actual:last.actual?last.actual.raw:null,
-          estimate:last.estimate?last.estimate.raw:null
-        };
-      }
-    }catch(e){}
-  });
 
   sv('m7-ts','Updated '+ts());
   btnDone(btn,ok);
