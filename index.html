@@ -7,7 +7,8 @@
   <button class="nb" onclick="ST('vix',this)">⚡ VIX</button>
   <button class="nb" onclick="ST('macro',this)">🌐 Macro</button>
   <button class="nb" onclick="ST('m7',this)">✦ Mag 7</button>
-  <button class="nb" onclick="ST('gpu',this)">🖥️ GPUs</button>
+  <button class="nb" onclick="ST('ai',this)">🤖 AI Cost</button>
+  <button class="nb" onclick="ST('rs',this)">📈 RS Rank</button>
   <button class="nb" onclick="ST('wl',this)">📋 Watchlist</button>
   <button class="nb" onclick="ST('scan',this)">🚀 Breakouts</button>
 </nav>
@@ -192,28 +193,40 @@
   <button class="rbtn" onclick="loadM7(this)">⟳ Refresh Mag 7</button>
 </div>
 
-<!-- PORTFOLIO TAB -->
-<!-- GPU PRICES TAB -->
-<div class="tab" id="tab-gpu">
-  <div class="sec">GPU Market</div>
+<!-- AI COST TAB -->
+<div class="tab" id="tab-ai">
+  <div class="sec">AI Model Costs</div>
   <div class="card">
-    <div class="chdr"><div class="clbl">Market Pulse</div><span class="badge" id="gpu-pulse">—</span></div>
-    <div id="gpu-trend"></div>
-    <div style="font-size:9px;color:var(--mt);margin-top:6px">Purchase prices = secondary market estimates. Rental = spot cloud rate per GPU/hr.</div>
+    <div class="chdr"><div class="clbl">Cost per 1M Tokens</div><span class="badge br">REF Jun 2026</span></div>
+    <div style="font-size:9px;color:var(--mt);margin-bottom:10px">Input / Output pricing in USD. Context window in tokens.</div>
+    <div id="ai-table"></div>
   </div>
-  <div id="gpu-cards"></div>
   <div class="card">
-    <div class="clbl" style="margin-bottom:8px">Rental Rate Comparison</div>
-    <div id="gpu-rental"></div>
+    <div class="clbl" style="margin-bottom:8px">Output Cost Comparison (per 1M tokens)</div>
+    <div id="ai-bars"></div>
   </div>
-  <div class="card" id="gpu-demand-card">
-    <div class="chdr"><div class="clbl">AI Chip Demand Indicators</div><span class="badge bo" id="gpu-demand-b">LIVE</span></div>
-    <div id="gpu-demand"></div>
+  <div class="card">
+    <div class="clbl" style="margin-bottom:8px">Context Window Comparison</div>
+    <div id="ai-ctx"></div>
   </div>
-  <div class="note" id="gpu-note"></div>
-  <div class="rts" id="gpu-ts"></div>
-  <button class="rbtn" onclick="loadGPU(this)">⟳ Refresh GPU Data</button>
-  <button class="rbtn" style="color:var(--red);margin-top:4px" onclick="cClear()">🗑 Clear Data Cache</button>
+  <div class="note">Prices from official provider documentation. Self-hosted open source models have near-zero marginal cost at scale. Prices trend downward ~2–3× per year historically.</div>
+  <div class="rts" id="ai-ts"></div>
+</div>
+
+<!-- RS RANK TAB -->
+<div class="tab" id="tab-rs">
+  <div class="sec">RS Ranking</div>
+  <div class="note">1-month relative strength vs SPY across all tracked assets. Updated on load.</div>
+  <div class="card">
+    <div class="chdr"><div class="clbl">Top Performers</div><span class="badge bl" id="rs-b">—</span></div>
+    <div id="rs-top"></div>
+  </div>
+  <div class="card">
+    <div class="chdr"><div class="clbl">Weakest</div><span class="badge br">LAGGING SPY</span></div>
+    <div id="rs-bot"></div>
+  </div>
+  <div class="rts" id="rs-ts"></div>
+  <button class="rbtn" onclick="loadRS(this)">⟳ Refresh RS Ranking</button>
 </div>
 
 <!-- WATCHLIST TAB -->
@@ -274,8 +287,17 @@
     <div style="font-size:14px;margin-top:4px" id="fg-l">—</div>
   </div>
   <div class="card">
-    <div class="clbl" style="margin-bottom:8px">Components (8 signals)</div>
+    <div class="clbl" style="margin-bottom:8px">Components (9 signals)</div>
     <div id="fg-c"></div>
+  </div>
+  <div class="card">
+    <div class="chdr"><div class="clbl">Market Breadth</div><span class="badge" id="breadth-b">—</span></div>
+    <div class="val" id="breadth-v" style="font-size:28px">—</div>
+    <div class="sub">% of tracked stocks above 200MA</div>
+    <div style="height:6px;background:var(--dim);border-radius:3px;margin-top:8px;position:relative" id="breadth-bar-wrap">
+      <div id="breadth-bar" style="height:100%;border-radius:3px;background:#ffd93d;width:50%"></div>
+    </div>
+    <div style="font-size:9px;color:var(--mt);margin-top:4px" id="breadth-i"></div>
   </div>
   <div class="note" id="fg-i"></div>
   <div class="rts" id="fg-ts"></div>
@@ -454,14 +476,15 @@ async function fFred(id,lim=20){
 
 // ── Raw numeric values for continuous F/G scoring ─────────────────
 window._fg={
-  vix:null,        // VIX level
-  vixSpread:null,  // VIX3M - VIX
-  move:null,       // MOVE index estimate
-  ycSpread:null,   // 10Y - 3M in bps
-  spyVs200:null,   // SPY % above/below 200MA
-  hySpr:null,      // HY spread bps
-  gsr:null,        // Gold/Silver ratio
-  gbp:null         // GBP/USD rate
+  vix:null,
+  vixSpread:null,
+  move:null,
+  ycSpread:null,
+  spyVs200:null,
+  hySpr:null,
+  gsr:null,
+  gbp:null,
+  breadth:null   // % stocks above 200MA
 };
 // Ref data — approximate values (used as fallback only)
 var COMMOD_REF={gold:3100,silver:34.0,wti:69.0,brent:73.0,ng:4.1,copper:4.85};
@@ -1036,193 +1059,161 @@ async function loadM7(btn){
   }
 }
 
-// ── GPU PRICE TRACKER ─────────────────────────────────────────────
-// Reference data — secondary market estimates, updated periodically
-// Sources: eBay completed listings, Lambda Labs, Vast.ai, Hoot.dev
-var GPU_DATA=[
-  {id:'h200-sxm',name:'NVIDIA H200 SXM',vram:'141GB HBM3e',tflops:'3958 FP16',
-   buyLo:28000,buyHi:42000,rental:4.50,trend:'stable',verified:'May 2026',
-   // Monthly midpoint prices: Oct25→May26
-   history:[38000,37000,36000,35500,35000,34000,35000,35000],
-   note:'Latest flagship. Strong demand from hyperscalers. Limited supply.'},
-  {id:'h100-sxm',name:'NVIDIA H100 SXM5',vram:'80GB HBM2e',tflops:'3958 FP16',
-   buyLo:18000,buyHi:28000,rental:2.85,trend:'falling',verified:'May 2026',
-   history:[28000,26000,24000,23000,22000,21000,23000,23000],
-   note:'Workhorse of AI training. Prices declining as supply improves.'},
-  {id:'h100-pcie',name:'NVIDIA H100 PCIe',vram:'80GB HBM2e',tflops:'3958 FP16',
-   buyLo:12000,buyHi:20000,rental:2.10,trend:'falling',verified:'May 2026',
-   history:[19000,17000,16000,15000,14500,14000,16000,16000],
-   note:'Lower interconnect vs SXM. Better availability. Good for inference.'},
-  {id:'a100-80',name:'NVIDIA A100 80GB',vram:'80GB HBM2e',tflops:'1248 FP16',
-   buyLo:7000,buyHi:13000,rental:1.80,trend:'falling',verified:'May 2026',
-   history:[14000,13000,12000,11000,10500,10000,10000,10000],
-   note:'Previous gen flagship. Solid for fine-tuning. Prices softening.'},
-  {id:'a100-40',name:'NVIDIA A100 40GB',vram:'40GB HBM2',tflops:'1248 FP16',
-   buyLo:4500,buyHi:8000,rental:1.20,trend:'falling',verified:'May 2026',
-   history:[8000,7000,6500,6000,6000,6000,6250,6250],
-   note:'Entry-level data centre. Good value for inference workloads.'},
-  {id:'mi300x',name:'AMD MI300X',vram:'192GB HBM3',tflops:'2610 FP16',
-   buyLo:12000,buyHi:20000,rental:3.20,trend:'stable',verified:'May 2026',
-   history:[17000,17000,16500,16000,16000,16000,16000,16000],
-   note:'Large VRAM advantage. Growing ROCm software support. Gaining traction.'},
-  {id:'l40s',name:'NVIDIA L40S',vram:'48GB GDDR6',tflops:'1457 FP16',
-   buyLo:8000,buyHi:14000,rental:1.40,trend:'stable',verified:'May 2026',
-   history:[12000,11500,11000,11000,11000,11000,11000,11000],
-   note:'Inference-optimised. Strong for multimodal and video AI workloads.'},
-  {id:'rtx4090',name:'NVIDIA RTX 4090',vram:'24GB GDDR6X',tflops:'1321 FP16',
-   buyLo:1600,buyHi:2200,rental:0.75,trend:'stable',verified:'May 2026',
-   history:[1900,1850,1800,1800,1800,1800,1900,1900],
-   note:'Consumer card used for research/fine-tuning. Best perf/$ for small models.'},
+// ── AI MODEL PRICING ─────────────────────────────────────────────
+var AI_MODELS=[
+  // Anthropic
+  {provider:'Anthropic',model:'Claude Opus 4',input:15.00,output:75.00,ctx:200000,tier:'frontier',updated:'Jun 2026',note:'Most capable. Best for complex reasoning and long-context tasks.'},
+  {provider:'Anthropic',model:'Claude Sonnet 4',input:3.00,output:15.00,ctx:200000,tier:'mid',updated:'Jun 2026',note:'Best balance of capability and cost. Recommended for most use cases.'},
+  {provider:'Anthropic',model:'Claude Haiku 3.5',input:0.80,output:4.00,ctx:200000,tier:'fast',updated:'Jun 2026',note:'Fastest and cheapest Anthropic model. Ideal for high-volume tasks.'},
+  // OpenAI
+  {provider:'OpenAI',model:'GPT-4o',input:2.50,output:10.00,ctx:128000,tier:'frontier',updated:'Jun 2026',note:'OpenAI flagship. Strong multimodal capabilities.'},
+  {provider:'OpenAI',model:'GPT-4o mini',input:0.15,output:0.60,ctx:128000,tier:'fast',updated:'Jun 2026',note:'Most cost-effective OpenAI model. Good for classification and extraction.'},
+  {provider:'OpenAI',model:'o3',input:10.00,output:40.00,ctx:200000,tier:'frontier',updated:'Jun 2026',note:'Extended thinking. Best for maths, coding, science.'},
+  {provider:'OpenAI',model:'o4-mini',input:1.10,output:4.40,ctx:200000,tier:'mid',updated:'Jun 2026',note:'Efficient reasoning model. Strong coding performance.'},
+  // Google
+  {provider:'Google',model:'Gemini 2.5 Pro',input:1.25,output:10.00,ctx:1000000,tier:'frontier',updated:'Jun 2026',note:'Longest context window. Strong at document analysis.'},
+  {provider:'Google',model:'Gemini 2.5 Flash',input:0.075,output:0.30,ctx:1000000,tier:'fast',updated:'Jun 2026',note:'Extremely cheap with massive context. Best cost/context ratio.'},
+  // Meta / Open Source
+  {provider:'Meta (self-hosted)',model:'Llama 3.3 70B',input:0.23,output:0.40,ctx:128000,tier:'open',updated:'Jun 2026',note:'Best open-source model. Near-frontier quality. Via Groq/Together.'},
+  {provider:'Meta (self-hosted)',model:'Llama 3.1 405B',input:3.00,output:3.00,ctx:128000,tier:'open',updated:'Jun 2026',note:'Largest open model. Matches GPT-4 class on many benchmarks.'},
+  // xAI
+  {provider:'xAI',model:'Grok 3',input:3.00,output:15.00,ctx:131072,tier:'frontier',updated:'Jun 2026',note:'Strong reasoning. Real-time X/Twitter data access.'},
 ];
 
-var GPU_NVDA_PEERS=['NVDA','AMD','INTC','AVGO','TSM'];
+var AI_TIER_COL={frontier:'#a855f7',mid:'#00d4ff',fast:'#00e599',open:'#ff9500'};
 
-function gpuTrendCol(t){return t==='rising'?'#00e599':t==='falling'?'#ff3b5c':'#ffd93d';}
-function gpuTrendIcon(t){return t==='rising'?'▲':t==='falling'?'▼':'■';}
-
-async function loadGPU(btn){
-  btnLoad(btn);
-
-  // Inline sparkline for GPU price history
-  function gpuSpark(history,col){
-    if(!history||history.length<2)return'';
-    var W=120,H=28,P=2;
-    var mn=safeMin(history),mx=safeMax(history),rng=(mx-mn)||1;
-    var pts=history.map((v,i)=>[(i/(history.length-1))*W,H-P-((v-mn)/rng)*(H-P*2)]);
-    var ln=pts.map(p=>p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ');
-    var ar='M0,'+H+pts.map(p=>' L'+p[0].toFixed(1)+','+p[1].toFixed(1)).join('')+' L'+W+','+H+' Z';
-    var id='gsp'+Math.random().toString(36).slice(2,6);
-    return`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="display:block;margin-top:6px">
-      <defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="${col}" stop-opacity=".3"/>
-        <stop offset="100%" stop-color="${col}" stop-opacity=".02"/>
-      </linearGradient></defs>
-      <path d="${ar}" fill="url(#${id})"/>
-      <polyline points="${ln}" fill="none" stroke="${col}" stroke-width="1.5" stroke-linejoin="round"/>
-      <circle cx="${pts[pts.length-1][0].toFixed(1)}" cy="${pts[pts.length-1][1].toFixed(1)}" r="2.5" fill="${col}"/>
-    </svg>`;
+function renderAI(){
+  // Table
+  var tbl=$('ai-table');
+  if(tbl){
+    var byProvider={};
+    AI_MODELS.forEach(m=>{(byProvider[m.provider]=byProvider[m.provider]||[]).push(m);});
+    tbl.innerHTML=Object.entries(byProvider).map(([prov,models])=>`
+      <div style="margin-bottom:12px">
+        <div style="font-size:9px;letter-spacing:2px;color:var(--mt);margin-bottom:6px">${prov.toUpperCase()}</div>
+        ${models.map(m=>{
+          var tc=AI_TIER_COL[m.tier]||'#5a7080';
+          return`<div style="padding:8px;background:var(--s2);border-radius:8px;margin-bottom:6px;border-left:3px solid ${tc}">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+              <span style="font-size:11px;color:var(--tx);font-weight:500">${m.model}</span>
+              <span style="font-size:9px;padding:1px 7px;border-radius:8px;background:${tc}22;color:${tc}">${m.tier.toUpperCase()}</span>
+            </div>
+            <div style="display:flex;gap:12px;margin-bottom:4px">
+              <span style="font-size:10px;color:var(--mt)">In: <span style="color:var(--tx)">$${m.input}/M</span></span>
+              <span style="font-size:10px;color:var(--mt)">Out: <span style="color:var(--tx)">$${m.output}/M</span></span>
+              <span style="font-size:10px;color:var(--mt)">Ctx: <span style="color:var(--tx)">${m.ctx>=1000000?(m.ctx/1000000).toFixed(0)+'M':(m.ctx/1000).toFixed(0)+'k'}</span></span>
+            </div>
+            <div style="font-size:9px;color:var(--mt)">${m.note}</div>
+          </div>`;
+        }).join('')}
+      </div>`).join('');
   }
-
-  // Render GPU cards with sparklines
-  var cards=$('gpu-cards');
-  if(cards){
-    cards.innerHTML=GPU_DATA.map(g=>{
-      var tc=gpuTrendCol(g.trend),ti=gpuTrendIcon(g.trend);
-      var midPrice=Math.round((g.buyLo+g.buyHi)/2);
-      // Price change from 3 months ago vs now
-      var h=g.history,hLen=h?h.length:0;
-      var priceChg=hLen>=4?((h[hLen-1]-h[hLen-4])/h[hLen-4]*100):0;
-      var chgCol=priceChg>2?'#00e599':priceChg<-2?'#ff3b5c':'#ffd93d';
-      var sparkHtml=g.history?gpuSpark(g.history,tc):'';
-      return`<div class="card">
-        <div class="chdr">
-          <div>
-            <div style="font-family:'Bebas Neue',sans-serif;font-size:18px;color:var(--ac)">${g.name}</div>
-            <div style="font-size:9px;color:var(--mt);margin-top:1px">${g.vram} · ${g.tflops} TFLOPS</div>
-          </div>
-          <div style="text-align:right">
-            <span style="font-size:9px;padding:2px 8px;border-radius:8px;background:${tc}22;color:${tc};border:1px solid ${tc}44">${ti} ${g.trend.toUpperCase()}</span>
-            <div style="font-size:8px;color:var(--mt);margin-top:3px">verified ${g.verified}</div>
-          </div>
-        </div>
-        <div style="display:flex;gap:8px;margin-top:8px">
-          <div style="flex:1;background:var(--s2);border-radius:8px;padding:10px">
-            <div style="font-size:9px;color:var(--mt);margin-bottom:3px">MARKET PRICE</div>
-            <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;color:var(--tx)">$${(midPrice/1000).toFixed(0)}k</div>
-            <div style="font-size:9px;color:var(--mt)">$${(g.buyLo/1000).toFixed(0)}k–$${(g.buyHi/1000).toFixed(0)}k range</div>
-            ${hLen>=4?`<div style="font-size:9px;color:${chgCol};margin-top:3px">${priceChg>=0?'▲ +':'▼ '}${fmt(Math.abs(priceChg),1)}% vs 3M ago</div>`:''}
-          </div>
-          <div style="flex:1;background:var(--s2);border-radius:8px;padding:10px">
-            <div style="font-size:9px;color:var(--mt);margin-bottom:3px">CLOUD RENTAL</div>
-            <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;color:var(--ac)">$${g.rental.toFixed(2)}</div>
-            <div style="font-size:9px;color:var(--mt)">per GPU / hour</div>
-            <div style="font-size:9px;color:var(--mt);margin-top:3px">~$${(g.rental*24*30).toFixed(0)}/mo</div>
-          </div>
-        </div>
-        <div style="display:flex;align-items:center;justify-content:space-between">
-          <div style="font-size:10px;color:var(--mt);margin-top:8px;line-height:1.5;flex:1">${g.note}</div>
-          ${sparkHtml}
-        </div>
-      </div>`;
-    }).join('');
-  }
-
-  // Rental rate bar chart
-  var rental=$('gpu-rental');
-  if(rental){
-    var maxR=safeMax(GPU_DATA.map(g=>g.rental));
-    rental.innerHTML=GPU_DATA.map(g=>{
-      var pct=g.rental/maxR*100;
-      var col=g.rental>3?'#a855f7':g.rental>2?'#00d4ff':g.rental>1?'#00e599':'#5a7080';
+  // Output cost bar chart
+  var bars=$('ai-bars');
+  if(bars){
+    var sorted=[...AI_MODELS].sort((a,b)=>b.output-a.output);
+    var maxOut=sorted[0].output;
+    bars.innerHTML=sorted.map(m=>{
+      var tc=AI_TIER_COL[m.tier]||'#5a7080';
+      var pct=m.output/maxOut*100;
       return`<div class="brow">
-        <div class="blbl" style="font-size:9px;width:110px">${g.name.replace('NVIDIA ','').replace('AMD ','')}</div>
-        <div class="btrk"><div class="bfil" style="width:${pct}%;background:${col}"></div></div>
-        <div class="bval" style="color:${col}">$${g.rental.toFixed(2)}/hr</div>
+        <div class="blbl" style="font-size:8px;width:100px">${m.model.replace('Claude ','').replace('GPT-','').replace('Gemini ','').replace('Llama ','L').replace('Grok ','G')}</div>
+        <div class="btrk"><div class="bfil" style="width:${pct}%;background:${tc}"></div></div>
+        <div class="bval" style="color:${tc};font-size:9px">$${m.output}/M</div>
       </div>`;
     }).join('');
   }
-
-  // Fetch live demand indicator stocks: NVDA, AMD, TSM
-  var demandSyms=['NVDA','AMD','TSM'];
-  var demandRes=await Promise.allSettled(demandSyms.map(s=>fC(s,60,false)));
-  var demandData={};demandSyms.forEach((s,i)=>demandData[s]=demandRes[i].value||null);
-
-  var demandEl=$('gpu-demand');
-  var anyLive=false;
-  if(demandEl){
-    demandEl.innerHTML=demandSyms.map(sym=>{
-      var c=demandData[sym];
-      if(!c||c.length<22)return`<div style="padding:8px 0;border-bottom:1px solid var(--dim);font-size:10px;color:var(--mt)">${sym} — loading…</div>`;
-      anyLive=true;
-      var p=c[c.length-1],pv=c[c.length-2];
-      var chg=(p-pv)/pv*100;
-      var ret1m=(p-c[c.length-22])/c[c.length-22]*100;
-      var m200=c.length>=200?c.slice(-200).reduce((a,b)=>a+b,0)/200:null;
-      var a200=m200?p>m200:null;
-      var chgCol=chg>=0?'#00e599':'#ff3b5c';
-      var labels={NVDA:'GPU leader · AI chips',AMD:'Competitor · MI300X',TSM:'Chip foundry · NVDA supplier'};
-      return`<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--dim)">
-        <div style="flex:1">
-          <div style="display:flex;align-items:center;gap:6px">
-            <span style="font-family:'Bebas Neue',sans-serif;font-size:16px;color:var(--ac)">${sym}</span>
-            ${a200!=null?`<span style="font-size:9px;color:${a200?'#00e599':'#ff3b5c'}">${a200?'▲':'▼'} 200MA</span>`:''}
-          </div>
-          <div style="font-size:9px;color:var(--mt)">${labels[sym]||''}</div>
-        </div>
-        <div style="text-align:right">
-          <div style="font-family:'Bebas Neue',sans-serif;font-size:16px">$${fmt(p,2)}</div>
-          <div style="font-size:10px;color:${chgCol}">${chg>=0?'▲ +':'▼ '}${fmt(Math.abs(chg),2)}% today</div>
-          <div style="font-size:9px;color:${ret1m>=0?'#00e599':'#ff3b5c'}">${ret1m>=0?'+':''}${fmt(ret1m,1)}% 1M</div>
-        </div>
+  // Context window bar chart
+  var ctx=$('ai-ctx');
+  if(ctx){
+    var sorted2=[...AI_MODELS].sort((a,b)=>b.ctx-a.ctx);
+    var maxCtx=sorted2[0].ctx;
+    ctx.innerHTML=sorted2.map(m=>{
+      var tc=AI_TIER_COL[m.tier]||'#5a7080';
+      var pct=m.ctx/maxCtx*100;
+      var ctxStr=m.ctx>=1000000?(m.ctx/1000000).toFixed(0)+'M':(m.ctx/1000).toFixed(0)+'k';
+      return`<div class="brow">
+        <div class="blbl" style="font-size:8px;width:100px">${m.model.replace('Claude ','').replace('GPT-','').replace('Gemini ','').replace('Llama ','L').replace('Grok ','G')}</div>
+        <div class="btrk"><div class="bfil" style="width:${pct}%;background:${tc}"></div></div>
+        <div class="bval" style="color:${tc};font-size:9px">${ctxStr}</div>
       </div>`;
     }).join('');
-    var db=$('gpu-demand-b');
-    if(db){db.textContent=anyLive?'LIVE':'REF';db.className='badge '+(anyLive?'bl':'br');}
   }
+  sv('ai-ts','Ref data Jun 2026');
+}
 
-  // Market pulse
-  var fallingCount=GPU_DATA.filter(g=>g.trend==='falling').length;
-  var risingCount=GPU_DATA.filter(g=>g.trend==='rising').length;
-  var pulse=$('gpu-pulse'),trend=$('gpu-trend');
-  if(pulse){
-    var lbl=risingCount>fallingCount?'TIGHTENING':fallingCount>risingCount?'SOFTENING':'STABLE';
-    var col=risingCount>fallingCount?'#00e599':fallingCount>risingCount?'#ff3b5c':'#ffd93d';
-    pulse.textContent=lbl;pulse.className='badge';
-    pulse.style.cssText=`background:${col}22;color:${col};border:1px solid ${col}44`;
-  }
-  if(trend){
-    trend.innerHTML=`<div style="display:flex;gap:6px;flex-wrap:wrap">
-      <span style="font-size:9px;padding:2px 8px;border-radius:8px;background:rgba(255,59,92,.1);color:#ff3b5c">${fallingCount} falling</span>
-      <span style="font-size:9px;padding:2px 8px;border-radius:8px;background:rgba(255,217,61,.1);color:#ffd93d">${GPU_DATA.filter(g=>g.trend==='stable').length} stable</span>
-      <span style="font-size:9px;padding:2px 8px;border-radius:8px;background:rgba(0,229,153,.1);color:#00e599">${risingCount} rising</span>
+// ── RS RANKING ────────────────────────────────────────────────────
+var _rsData=null; // cached RS data from scanner/other loads
+
+async function loadRS(btn){
+  btnLoad(btn);
+  var rsb=$('rs-b');
+  if(rsb){rsb.textContent='LOADING';rsb.className='badge bo';}
+  // Fetch a broad universe: M7 + sectors + commodities + macro
+  var RS_UNI=[
+    'SPY','QQQ','IWM',
+    'AAPL','MSFT','NVDA','GOOGL','AMZN','META','TSLA',
+    'PLTR','CRWD','NOW','UBER','SHOP','NET','DDOG','APP',
+    'XLK','XLF','XLE','XLV','XLI','XLY','XLP','XLU',
+    'GLD','SLV','TLT','HYG','BTC-USD',
+    'TSM','ASML','MELI','ARM',
+  ];
+  var res=await Promise.allSettled(RS_UNI.map(s=>fC(s,30,false)));
+  var D={};RS_UNI.forEach((s,i)=>D[s]=res[i].value||null);
+  var spy=D['SPY'];
+  var spyRet=spy&&spy.length>=22?(spy[spy.length-1]-spy[spy.length-22])/spy[spy.length-22]*100:0;
+  var items=[];
+  RS_UNI.filter(s=>s!=='SPY').forEach(s=>{
+    var c=D[s];if(!c||c.length<22)return;
+    var ret=(c[c.length-1]-c[c.length-22])/c[c.length-22]*100;
+    var rs=parseFloat((ret-spyRet).toFixed(1));
+    var price=c[c.length-1];
+    var chg=(c[c.length-1]-c[c.length-2])/c[c.length-2]*100;
+    items.push({s,rs,ret:parseFloat(ret.toFixed(1)),price,chg:parseFloat(chg.toFixed(2))});
+  });
+  items.sort((a,b)=>b.rs-a.rs);
+  if(rsb){rsb.textContent=items.length+' assets';rsb.className='badge bo';}
+  function rsRow(item){
+    var col=item.rs>=5?'#00e599':item.rs>=0?'#ffd93d':item.rs>=-5?'#ff9500':'#ff3b5c';
+    var w=Math.min(100,Math.abs(item.rs)/20*100);
+    return`<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--dim)">
+      <div style="width:60px;font-family:'Bebas Neue',sans-serif;font-size:14px;color:var(--ac)">${item.s}</div>
+      <div style="flex:1;height:6px;background:var(--dim);border-radius:3px">
+        <div style="width:${w}%;height:100%;background:${col};border-radius:3px"></div>
+      </div>
+      <div style="text-align:right;min-width:80px">
+        <div style="font-size:10px;color:${col}">${item.rs>=0?'+':''}${item.rs}% vs SPY</div>
+        <div style="font-size:9px;color:var(--mt)">${item.chg>=0?'▲ +':'▼ '}${Math.abs(item.chg)}% today</div>
+      </div>
     </div>`;
   }
-
-  var note=$('gpu-note');
-  if(note)note.textContent='Purchase prices: secondary market estimates (eBay, broker listings). Rental rates: Vast.ai / Lambda Labs spot pricing. Price history: monthly midpoints Oct 2025–May 2026. Sources verified May 2026.';
-
-  sv('gpu-ts','Updated '+ts());
+  var top=$('rs-top'),bot=$('rs-bot');
+  if(top)top.innerHTML=items.slice(0,10).map(rsRow).join('');
+  if(bot)bot.innerHTML=items.slice(-8).reverse().map(rsRow).join('');
+  sv('rs-ts','Updated '+ts());
   btnDone(btn,true);
+}
+
+// ── BREADTH INDICATOR ─────────────────────────────────────────────
+var _breadthScore=50;
+function updateBreadth(closes200){
+  // closes200 is array of {above:bool} from scanner or other data
+  if(!closes200||!closes200.length)return;
+  var pct=Math.round(closes200.filter(x=>x).length/closes200.length*100);
+  _breadthScore=pct;
+  sv('breadth-v',pct+'%');
+  var col=pct>=70?'#00e599':pct>=50?'#ffd93d':pct>=30?'#ff9500':'#ff3b5c';
+  var lbl=pct>=70?'BROAD RALLY':pct>=50?'MODERATE':pct>=30?'NARROWING':'WEAK BREADTH';
+  var bb=$('breadth-b');
+  if(bb){bb.textContent=lbl;bb.className='badge';bb.style.cssText=`background:${col}22;color:${col};border:1px solid ${col}44`;}
+  var bar=$('breadth-bar');
+  if(bar){bar.style.width=pct+'%';bar.style.background=col;}
+  var bi=$('breadth-i');
+  if(bi)bi.textContent=pct+'% of '+closes200.length+' tracked stocks above 200MA. '+
+    (pct>=70?'Strong breadth — rally well supported.':pct>=50?'Moderate breadth — selective market.':pct>=30?'Breadth narrowing — leadership concentrated.':'Poor breadth — bear market signal.');
+  // Feed into F/G as 9th signal
+  window._fg.breadth=pct;
+  compFG();
 }
 
 // ── TECHNICAL INDICATORS ─────────────────────────────────────────
@@ -1405,15 +1396,30 @@ async function refWL(btn){
   btnLoad(btn);
   if(e)e.style.display='none';
   if(r)r.innerHTML='<div style="font-size:10px;color:var(--mt);text-align:center;padding:14px">Loading…</div>';
-  // Fetch SPY for relative strength + all watchlist stocks
   var allSyms=['SPY',...WL];
   var res=await Promise.allSettled(allSyms.map(t=>fC(t,400,true)));
   var spyData=res[0].value?res[0].value.map(x=>typeof x==='object'?x.c:x):null;
-  if(r)r.innerHTML=WL.map((t,i)=>wCard(t,res[i+1].value,spyData)).join('');
+  // Fetch options IV for each watchlist stock
+  var ivData={};
+  await Promise.allSettled(WL.map(async tk=>{
+    try{
+      var url='https://query1.finance.yahoo.com/v7/finance/options/'+tk;
+      var rv=await tF(PROXY+encodeURIComponent(url),10000);
+      if(!rv.ok)return;
+      var j=await rv.json();
+      var chain=j.optionChain.result[0];
+      var calls=chain.options[0]&&chain.options[0].calls||[];
+      // Get ATM call IV
+      var price=chain.quote&&chain.quote.regularMarketPrice||0;
+      var atm=calls.reduce((best,c)=>Math.abs(c.strike-price)<Math.abs((best.strike||999)-price)?c:best,{});
+      if(atm.impliedVolatility)ivData[tk]={iv:parseFloat((atm.impliedVolatility*100).toFixed(1))};
+    }catch(e){}
+  }));
+  if(r)r.innerHTML=WL.map((t,i)=>wCard(t,res[i+1].value,spyData,ivData[t]||null)).join('');
   sv('wl-ts','Updated '+ts());
   btnDone(btn,true);
 }
-function wCard(tk,raw,spyRaw){
+function wCard(tk,raw,spyRaw,ivInfo){
   var c=raw?raw.map(x=>typeof x==='object'?x.c:x):null;
   var vols=raw?raw.map(x=>typeof x==='object'?x.v:null):null;
   if(!c||c.length<10)return`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-family:'Bebas Neue',sans-serif;font-size:18px;color:var(--ac)">${tk}</span><button class="rmv" onclick="rmWL('${tk}')">✕</button></div><div style="font-size:10px;color:var(--warn);margin-top:6px">⚠ No data — check ticker is a valid US stock.</div></div>`;
@@ -1444,7 +1450,7 @@ function wCard(tk,raw,spyRaw){
     var vRat=avgV>0?recentV/avgV:0;
     if(vRat>0)volHtml=`<span class="${vRat>1.5?'vol-badge vol-high':'vol-badge vol-norm'}">${vRat>1.5?'🔥':''} Vol ${fmt(vRat,1)}×</span>`;
   }
-  return`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div><span style="font-family:'Bebas Neue',sans-serif;font-size:20px;color:var(--ac)">${tk}</span><span style="font-size:9px;padding:2px 7px;border-radius:8px;margin-left:8px;background:${sc}22;color:${sc};border:1px solid ${sc}44">${sig==='bull'?'UPTREND':sig==='bear'?'DOWNTREND':'MIXED'}</span></div><button class="rmv" onclick="rmWL('${tk}')">✕</button></div><div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:10px"><div><div style="font-family:'Bebas Neue',sans-serif;font-size:32px;line-height:1">$${fmt(p,2)}</div><div style="font-size:11px;color:${chg>=0?'#00e599':'#ff3b5c'};margin-top:2px">${chg>=0?'▲ +':'▼ '}${fmt(Math.abs(chg),2)}%</div></div><div style="text-align:right;font-size:10px;color:var(--mt)"><div>50MA <span style="color:${a50?'#00e599':'#ff3b5c'}">${a50?'▲':'▼'} $${fmt(m50,0)}</span></div><div>200MA <span style="color:${a200?'#00e599':'#ff3b5c'}">${a200?'▲':'▼'} $${fmt(m200,0)}</span></div></div></div><div style="font-size:9px;color:var(--mt);display:flex;justify-content:space-between;margin-bottom:4px"><span>$${fmt(l,0)}</span><span style="color:var(--tx)">${rng}% of range</span><span>$${fmt(h,0)}</span></div><div class="rng"><div class="rnf" style="width:${rng}%"></div><div class="rnt" style="left:${rng}%"></div></div><div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:8px">${pill(a50?'pu':'pd',(a50?'▲':'▼')+' 50MA')}${pill(a200?'pu':'pd',(a200?'▲':'▼')+' 200MA')}${pill(gx?'pp':'pd',gx?'Golden ✦':'Death ✖')}${rsHtml}${volHtml}<span style="font-size:9px;padding:2px 8px;border-radius:8px;background:${ddCol}15;color:${ddCol}">DD ${fmt(dd,1)}%</span>${pH>-3?'<span class="pill pb">🚀 Near High</span>':''}</div>${renderTechnicals(c)}</div>`;
+  return`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div><span style="font-family:'Bebas Neue',sans-serif;font-size:20px;color:var(--ac)">${tk}</span><span style="font-size:9px;padding:2px 7px;border-radius:8px;margin-left:8px;background:${sc}22;color:${sc};border:1px solid ${sc}44">${sig==='bull'?'UPTREND':sig==='bear'?'DOWNTREND':'MIXED'}</span></div><button class="rmv" onclick="rmWL('${tk}')">✕</button></div><div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:10px"><div><div style="font-family:'Bebas Neue',sans-serif;font-size:32px;line-height:1">$${fmt(p,2)}</div><div style="font-size:11px;color:${chg>=0?'#00e599':'#ff3b5c'};margin-top:2px">${chg>=0?'▲ +':'▼ '}${fmt(Math.abs(chg),2)}%</div></div><div style="text-align:right;font-size:10px;color:var(--mt)"><div>50MA <span style="color:${a50?'#00e599':'#ff3b5c'}">${a50?'▲':'▼'} $${fmt(m50,0)}</span></div><div>200MA <span style="color:${a200?'#00e599':'#ff3b5c'}">${a200?'▲':'▼'} $${fmt(m200,0)}</span></div></div></div><div style="font-size:9px;color:var(--mt);display:flex;justify-content:space-between;margin-bottom:4px"><span>$${fmt(l,0)}</span><span style="color:var(--tx)">${rng}% of range</span><span>$${fmt(h,0)}</span></div><div class="rng"><div class="rnf" style="width:${rng}%"></div><div class="rnt" style="left:${rng}%"></div></div><div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:8px">${pill(a50?'pu':'pd',(a50?'▲':'▼')+' 50MA')}${pill(a200?'pu':'pd',(a200?'▲':'▼')+' 200MA')}${pill(gx?'pp':'pd',gx?'Golden ✦':'Death ✖')}${rsHtml}${volHtml}<span style="font-size:9px;padding:2px 8px;border-radius:8px;background:${ddCol}15;color:${ddCol}">DD ${fmt(dd,1)}%</span>${pH>-3?'<span class="pill pb">🚀 Near High</span>':''}</div>${ivInfo&&ivInfo.iv?"<span style=\"font-size:9px;padding:2px 8px;border-radius:8px;background:#a855f722;color:#a855f7\">IV "+ivInfo.iv+"%</span>":""}${renderTechnicals(c)}</div>`;
 }
 
 // ── BREAKOUT SCANNER (expanded + volume) ─────────────────────────
@@ -1512,6 +1518,15 @@ async function runScan(btn){
   if(lb){lb.textContent=lo.length+' stocks';lb.className='badge br'}
   sv('sc-s',hi.length>lo.length*1.5?'More breakouts than oversold — momentum healthy.':lo.length>hi.length*1.5?'More near lows — selective. Look for vol-confirmed.':'Balanced — screen by volume confirmation.');
   if(sb){sb.textContent='DONE · '+all.filter(r=>r.raw).length+' scanned';sb.className='badge bo'}
+
+  // Update breadth indicator from scan results
+  var breadthData=all.map(item=>{
+    var c=item.raw?item.raw.map(x=>typeof x==='object'?x.c:x):null;
+    if(!c||c.length<200)return null;
+    var m200=c.slice(-200).reduce((a,b)=>a+b,0)/200;
+    return c[c.length-1]>m200;
+  }).filter(x=>x!==null);
+  updateBreadth(breadthData);
 
   function sRow(s,mode){
     var col=mode==='h'?'#00e599':'#ff6b35';
@@ -1586,18 +1601,24 @@ function compFG(){
       ?clamp(50+(r.gbp-1.25)*300,0,100)
       :50;
 
-    var scores=[sVix,sVixTerm,sMove,sYC,sMom,sCredit,sGSR,sGBP];
+    // 9. Market Breadth: % stocks above 200MA: 75%→90, 50%→50, 25%→10
+    var sBreadth=r.breadth!=null
+      ?clamp((r.breadth-25)/(75-25)*80+10,0,100)
+      :50;
+
+    var scores=[sVix,sVixTerm,sMove,sYC,sMom,sCredit,sGSR,sGBP,sBreadth];
     var score=Math.round(scores.reduce((a,b)=>a+b,0)/scores.length);
 
     var comps=[
-      {n:'VIX Level',    sc:sVix,     raw:r.vix!=null?'VIX '+fmt(r.vix,1):'no data'},
-      {n:'VIX Term',     sc:sVixTerm, raw:r.vixSpread!=null?(r.vixSpread>=0?'+':'')+fmt(r.vixSpread,1)+' spread':'no data'},
-      {n:'MOVE Index',   sc:sMove,    raw:r.move!=null?'MOVE ~'+Math.round(r.move):'no data'},
-      {n:'Yield Curve',  sc:sYC,      raw:r.ycSpread!=null?(r.ycSpread>=0?'+':'')+r.ycSpread+'bps':'no data'},
-      {n:'SPY vs 200MA', sc:sMom,     raw:r.spyVs200!=null?(r.spyVs200>=0?'+':'')+fmt(r.spyVs200,1)+'%':'no data'},
-      {n:'Credit Sprd',  sc:sCredit,  raw:r.hySpr!=null?Math.round(r.hySpr)+'bps HY':'no data'},
-      {n:'Gold/Silver',  sc:sGSR,     raw:r.gsr!=null?'ratio '+fmt(r.gsr,1):'no data'},
-      {n:'GBP/USD',      sc:sGBP,     raw:r.gbp!=null?fmt(r.gbp,4):'no data'},
+      {n:'VIX Level',    sc:sVix,      raw:r.vix!=null?'VIX '+fmt(r.vix,1):'no data'},
+      {n:'VIX Term',     sc:sVixTerm,  raw:r.vixSpread!=null?(r.vixSpread>=0?'+':'')+fmt(r.vixSpread,1)+' spread':'no data'},
+      {n:'MOVE Index',   sc:sMove,     raw:r.move!=null?'MOVE ~'+Math.round(r.move):'no data'},
+      {n:'Yield Curve',  sc:sYC,       raw:r.ycSpread!=null?(r.ycSpread>=0?'+':'')+r.ycSpread+'bps':'no data'},
+      {n:'SPY vs 200MA', sc:sMom,      raw:r.spyVs200!=null?(r.spyVs200>=0?'+':'')+fmt(r.spyVs200,1)+'%':'no data'},
+      {n:'Credit Sprd',  sc:sCredit,   raw:r.hySpr!=null?Math.round(r.hySpr)+'bps HY':'no data'},
+      {n:'Gold/Silver',  sc:sGSR,      raw:r.gsr!=null?'ratio '+fmt(r.gsr,1):'no data'},
+      {n:'GBP/USD',      sc:sGBP,      raw:r.gbp!=null?fmt(r.gbp,4):'no data'},
+      {n:'Breadth',      sc:sBreadth,  raw:r.breadth!=null?r.breadth+'% >200MA':'no data'},
     ];
 
     // Update needle
@@ -1652,6 +1673,7 @@ function compFG(){
 // ── INIT ─────────────────────────────────────────────────────────
 rEqS();lWL();refWL();
 fetchNews();
+renderAI();
 rYC(MR.y2,MR.y10);rMom(null,null);rDXY(null);rGBP(null);rSecs(null);
 rVix(VR.cur,VR.prev,VR.v3m,null,true);
 rPC(VR.cur,VR.v3m,true);
@@ -1662,7 +1684,7 @@ rISM(50.3,49.8,true);
 renderCal();
 window._gsrS='neut';window._gbpS='neut';window._csS='neut';window._moveS='neut';window._pcS='neut';window._yS='neut';window._vS='neut';window._mS='neut';
 compFG();
-loadCommod();loadSpreads();loadVix();loadMacro();loadM7();loadGPU();runScan();
+loadCommod();loadSpreads();loadVix();loadMacro();loadM7();loadRS();runScan();
 
 // Refresh intervals
 setInterval(loadVix,60000);
@@ -1670,6 +1692,7 @@ setInterval(loadCommod,180000);
 setInterval(loadSpreads,120000);
 setInterval(loadMacro,120000);
 setInterval(loadM7,300000);
+setInterval(loadRS,300000);
 setInterval(compFG,30000); // recheck F/G every 30s in case signals updated
 // Age badge refresh every 60s
 setInterval(()=>{
