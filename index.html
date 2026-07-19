@@ -1247,11 +1247,13 @@ function calcEMA(data,period){
 function calcMACD(closes){
   if(!closes||closes.length<40)return null;
   var e12=calcEMA(closes,12),e26=calcEMA(closes,26);
-  var off=closes.length-e26.length;
-  var ml=e26.map((v,i)=>e12[i+off]-v);
+  // Correct offset: align by length difference, not closes.length
+  var off=e12.length-e26.length; // = 14, not 25
+  var ml=e26.map((v,i)=>e12[i+off]-v).filter(v=>!isNaN(v)&&isFinite(v));
   if(ml.length<9)return null;
   var sig=calcEMA(ml,9);
   var m=ml[ml.length-1],s=sig[sig.length-1];
+  if(isNaN(m)||isNaN(s)||!isFinite(m)||!isFinite(s))return null;
   var pm=ml[ml.length-2]||m,ps=sig[sig.length-2]||s;
   return{
     macd:parseFloat(m.toFixed(3)),
@@ -1534,7 +1536,8 @@ function calcBuySell(closes,vols,spyRaw,tk){
   // ── 3. MACD with magnitude scaling ±15 ───────────────────────────
   var macd=calcMACD(closes);
   if(macd!=null){
-    var histStr=Math.min(1,Math.abs(macd.hist)/(p*0.002||0.001));
+    var histStr=Math.min(1,Math.abs(macd.hist)/Math.max(p*0.002,0.0001));
+    if(isNaN(histStr)||!isFinite(histStr))histStr=0.5;
     var mBase=macd.cross==='bull'?15:macd.cross==='bear'?-15:macd.bullish?10:-10;
     var mPts=mBase*(0.5+0.5*histStr);
     if(mPts>0)mPts*=tMult;
@@ -1647,6 +1650,8 @@ function calcBuySell(closes,vols,spyRaw,tk){
   }
 
   // ── Final ────────────────────────────────────────────────────────
+  // Guard against any NaN that slipped through
+  if(isNaN(score)||!isFinite(score))score=50;
   score=Math.max(0,Math.min(100,Math.round(score)));
 
   // Regime-adjusted thresholds
