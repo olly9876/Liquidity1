@@ -1419,6 +1419,253 @@ async function refWL(btn){
   sv('wl-ts','Updated '+ts());
   btnDone(btn,true);
 }
+// ── BUY / SELL SIGNAL SCORER ─────────────────────────────────────
+// ── ADVANCED SIGNAL HELPERS ───────────────────────────────────────
+
+// On-Balance Volume
+function calcOBV(closes,vols){
+  if(!closes||!vols||closes.length<20)return null;
+  var obv=0,arr=[];
+  for(var i=0;i<closes.length;i++){
+    if(i>0){
+      if(closes[i]>closes[i-1])obv+=(vols[i]||0);
+      else if(closes[i]<closes[i-1])obv-=(vols[i]||0);
+    }
+    arr.push(obv);
+  }
+  return arr;
+}
+
+// RSI Divergence detector (last 30 bars)
+function calcRSIDiv(closes){
+  if(!closes||closes.length<40)return{bull:false,bear:false};
+  var recent=closes.slice(-30);
+  // Compute RSI at each bar in recent window
+  var rsiArr=recent.map((_,i)=>i>=14?calcRSI(closes.slice(-(30-i+14+1))):null).filter(v=>v!=null);
+  if(rsiArr.length<10)return{bull:false,bear:false};
+  var n=Math.min(rsiArr.length,recent.length);
+  var pr=recent.slice(-n),rs=rsiArr.slice(-n);
+  // Find last two lows and highs
+  function findExtremes(arr,type){
+    var pts=[];
+    for(var i=1;i<arr.length-1;i++){
+      if(type==='low'&&arr[i]<arr[i-1]&&arr[i]<arr[i+1])pts.push(i);
+      if(type==='high'&&arr[i]>arr[i-1]&&arr[i]>arr[i+1])pts.push(i);
+    }
+    return pts.slice(-2);
+  }
+  var priceLows=findExtremes(pr,'low'),priceHighs=findExtremes(pr,'high');
+  var bull=false,bear=false;
+  if(priceLows.length===2){
+    var i1=priceLows[0],i2=priceLows[1]; // i2 is more recent
+    if(pr[i2]<pr[i1]&&rs[i2]>rs[i1]+3)bull=true; // price lower low, RSI higher low
+  }
+  if(priceHighs.length===2){
+    var j1=priceHighs[0],j2=priceHighs[1];
+    if(pr[j2]>pr[j1]&&rs[j2]<rs[j1]-3)bear=true; // price higher high, RSI lower high
+  }
+  return{bull,bear};
+}
+
+// Detect market regime from F/G live data
+function detectRegime(){
+  var fg=window._fg||{};
+  var vix=fg.vix,spy=fg.spyVs200,yc=fg.ycSpread;
+  var bear=0,bull=0;
+  if(vix!=null){if(vix>30)bear+=2;else if(vix>25)bear+=1;else if(vix<15)bull+=2;else if(vix<20)bull+=1;}
+  if(spy!=null){if(spy<-3)bear+=2;else if(spy<0)bear+=1;else if(spy>5)bull+=2;else if(spy>0)bull+=1;}
+  if(yc!=null){if(yc<-50)bear+=1;else if(yc>50)bull+=1;}
+  if(bear>=3)return'bear';
+  if(bull>=3)return'bull';
+  return'neutral';
+}
+
+// Simulate weekly closes (every 5 trading days)
+function toWeekly(closes){
+  if(!closes||closes.length<20)return null;
+  var w=[];
+  for(var i=closes.length-1;i>=0;i-=5)w.unshift(closes[i]);
+  return w.length>=10?w:null;
+}
+
+// Days until earnings for M7
+function earnDays(tk){
+  var d=M7_EARN[tk];if(!d)return null;
+  var days=Math.ceil((new Date(d)-new Date())/86400000);
+  return days>=0?days:null;
+}
+
+// ── IMPROVED BUY / SELL SCORER (12 signals) ───────────────────────
+function calcBuySell(closes,vols,spyRaw,tk){
+  if(!closes||closes.length<30)return null;
+  var score=50,reasons=[];
+  var p=closes[closes.length-1];
+  var m50=closes.slice(-50).reduce((a,b)=>a+b,0)/Math.min(50,closes.length);
+  var m200=closes.length>=200?closes.slice(-200).reduce((a,b)=>a+b,0)/200:null;
+  var spyM200=spyRaw&&spyRaw.length>=200?spyRaw.slice(-200).reduce((a,b)=>a+b,0)/200:null;
+  var spyAbove200=spyM200?spyRaw[spyRaw.length-1]>spyM200:null;
+  var stockAbove200=m200?p>m200:null;
+  var regime=detectRegime();
+
+  // ── Trend filter multiplier ──────────────────────────────────────
+  // Reduces weight of bullish signals in downtrending markets
+  var tMult=1.0;
+  if(stockAbove200===false&&spyAbove200===false){tMult=0.45;reasons.push({t:'Both stock & SPY in downtrend',bull:false});}
+  else if(stockAbove200===false){tMult=0.65;}
+  else if(spyAbove200===false){tMult=0.85;}
+
+  // ── 1. RSI — continuous scaling ±20 ─────────────────────────────
+  var rsi=calcRSI(closes);
+  if(rsi!=null){
+    var rsiPts=(50-rsi)*0.4;
+    if(rsiPts>0)rsiPts*=tMult;
+    score+=rsiPts;
+    if(rsi<25)reasons.push({t:'RSI deeply oversold ('+rsi+')',bull:true});
+    else if(rsi<35)reasons.push({t:'RSI oversold ('+rsi+')',bull:true});
+    else if(rsi>75)reasons.push({t:'RSI overbought ('+rsi+')',bull:false});
+    else if(rsi>65)reasons.push({t:'RSI elevated ('+rsi+')',bull:false});
+  }
+
+  // ── 2. RSI Divergence ±15 ────────────────────────────────────────
+  var div=calcRSIDiv(closes);
+  if(div.bull){var dp=15*tMult;score+=dp;reasons.push({t:'Bullish RSI divergence',bull:true});}
+  if(div.bear){score-=15;reasons.push({t:'Bearish RSI divergence',bull:false});}
+
+  // ── 3. MACD with magnitude scaling ±15 ───────────────────────────
+  var macd=calcMACD(closes);
+  if(macd!=null){
+    var histStr=Math.min(1,Math.abs(macd.hist)/(p*0.002||0.001));
+    var mBase=macd.cross==='bull'?15:macd.cross==='bear'?-15:macd.bullish?10:-10;
+    var mPts=mBase*(0.5+0.5*histStr);
+    if(mPts>0)mPts*=tMult;
+    score+=mPts;
+    if(macd.cross==='bull')reasons.push({t:'MACD bullish cross 🔼',bull:true});
+    else if(macd.cross==='bear')reasons.push({t:'MACD bearish cross 🔽',bull:false});
+    else if(macd.bullish)reasons.push({t:'MACD bullish',bull:true});
+    else reasons.push({t:'MACD bearish',bull:false});
+  }
+
+  // ── 4. Moving averages ±15 ───────────────────────────────────────
+  if(p>m50){score+=7;}else{score-=7;reasons.push({t:'Below 50MA',bull:false});}
+  if(m200){
+    if(p>m200){score+=5;}else{score-=5;reasons.push({t:'Below 200MA',bull:false});}
+    var gx=m50>m200;
+    if(gx){score+=3;}else{score-=3;reasons.push({t:'Death cross active',bull:false});}
+  }
+
+  // ── 5. OBV with divergence ±18 ───────────────────────────────────
+  var rawVols=vols?vols.map(v=>typeof v==='object'?v.v||0:v||0):null;
+  if(rawVols&&rawVols.length>=20){
+    var obvArr=calcOBV(closes.slice(-rawVols.length),rawVols);
+    if(obvArr&&obvArr.length>=20){
+      var obvSlice=obvArr.slice(-10);
+      var obvStart=Math.abs(obvSlice[0])||1;
+      var obvSlope=(obvSlice[obvSlice.length-1]-obvSlice[0])/obvStart;
+      var priceSlope10=(closes[closes.length-1]-closes[closes.length-10])/closes[closes.length-10];
+      // OBV trend
+      if(obvSlope>0.05){var op=8*tMult;score+=op;reasons.push({t:'OBV accumulation',bull:true});}
+      else if(obvSlope<-0.05){score-=8;reasons.push({t:'OBV distribution',bull:false});}
+      // OBV divergence (hidden signals)
+      if(obvSlope>0.02&&priceSlope10<-0.02){var hbp=10*tMult;score+=hbp;reasons.push({t:'Hidden bullish OBV divergence',bull:true});}
+      if(obvSlope<-0.02&&priceSlope10>0.02){score-=10;reasons.push({t:'Hidden bearish OBV divergence',bull:false});}
+    }
+  }
+
+  // ── 6. Bollinger Bands — continuous ±10 ─────────────────────────
+  var bb=calcBB(closes);
+  if(bb!=null){
+    var bbPts=(50-bb.pct)*0.15;
+    if(bbPts>0)bbPts*=tMult;
+    score+=bbPts;
+    if(bb.pct<=15)reasons.push({t:'Near BB lower band',bull:true});
+    else if(bb.pct>=85)reasons.push({t:'Near BB upper band',bull:false});
+  }
+
+  // ── 7. Stochastic — continuous ±8 ───────────────────────────────
+  var st=calcStoch(closes);
+  if(st!=null){
+    var stPts=(50-st.k)*0.12;
+    if(stPts>0)stPts*=tMult;
+    score+=stPts;
+    if(st.k<20&&st.k>st.d)reasons.push({t:'Stoch oversold+turning up',bull:true});
+    else if(st.k>80&&st.k<st.d)reasons.push({t:'Stoch overbought+turning down',bull:false});
+  }
+
+  // ── 8. Volume confirmation ±5 ────────────────────────────────────
+  if(rawVols&&rawVols.length>=20){
+    var rv=rawVols[rawVols.length-1];
+    var av=rawVols.slice(-20,-1).filter(v=>v>0).reduce((a,b)=>a+b,0)/19;
+    if(av>0&&rv>av*1.5){
+      var priceUp=p>(closes[closes.length-2]||p);
+      if(priceUp){score+=5;reasons.push({t:'High vol breakout',bull:true});}
+      else{score-=5;reasons.push({t:'High vol selloff',bull:false});}
+    }
+  }
+
+  // ── 9. RS vs SPY continuous ±7 ──────────────────────────────────
+  if(spyRaw&&spyRaw.length>=22&&closes.length>=22){
+    var tkR=(p-closes[closes.length-22])/closes[closes.length-22]*100;
+    var spR=(spyRaw[spyRaw.length-1]-spyRaw[spyRaw.length-22])/spyRaw[spyRaw.length-22]*100;
+    var rs=tkR-spR;
+    var rsPts=Math.max(-7,Math.min(7,rs*0.7));
+    score+=rsPts;
+    if(rs>5)reasons.push({t:'Strong RS vs SPY (+'+rs.toFixed(1)+'%)',bull:true});
+    else if(rs<-5)reasons.push({t:'Weak RS vs SPY ('+rs.toFixed(1)+'%)',bull:false});
+  }
+
+  // ── 10. Weekly timeframe confirmation ±10 ────────────────────────
+  var weekly=toWeekly(closes);
+  if(weekly&&weekly.length>=14){
+    var wRSI=calcRSI(weekly),wMACD=calcMACD(weekly);
+    var dailyBull=score>50;
+    if(wRSI!=null){
+      var wBull=wRSI<50;
+      if(dailyBull&&wBull){score+=8;reasons.push({t:'Weekly RSI confirms ('+wRSI+')',bull:true});}
+      else if(!dailyBull&&!wBull){score-=8;reasons.push({t:'Weekly bearish confirmed ('+wRSI+')',bull:false});}
+      else{score=50+(score-50)*0.85;} // disagreement — reduce conviction 15%
+    }
+    if(wMACD!=null){
+      if(wMACD.bullish&&dailyBull)score+=4;
+      else if(!wMACD.bullish&&!dailyBull)score-=4;
+    }
+  }
+
+  // ── 11. Regime adjustment ────────────────────────────────────────
+  if(regime==='bear'){score-=8;reasons.push({t:'🐻 Bear market regime',bull:false});}
+  else if(regime==='bull'){score+=5;reasons.push({t:'🐂 Bull market regime',bull:true});}
+
+  // ── 12. Earnings proximity ───────────────────────────────────────
+  var edays=earnDays(tk);
+  if(edays!=null){
+    if(edays<=3){
+      score=50+(score-50)*0.3; // collapse to near-neutral
+      reasons.push({t:'⚠ Earnings in '+edays+'d — hold signal',bull:false});
+    }else if(edays<=10){
+      score=50+(score-50)*0.6;
+      reasons.push({t:'Earnings in '+edays+'d — reduce size',bull:false});
+    }
+  }
+
+  // ── Final ────────────────────────────────────────────────────────
+  score=Math.max(0,Math.min(100,Math.round(score)));
+
+  // Regime-adjusted thresholds
+  var sBuy=regime==='bear'?78:72;
+  var buy=regime==='bear'?65:58;
+  var sell=regime==='bear'?48:42;
+  var sSell=regime==='bear'?33:28;
+
+  var verdict,col,stars;
+  if(score>=sBuy){verdict='STRONG BUY';col='#00e599';stars='★★★★★';}
+  else if(score>=buy){verdict='BUY';col='#4ade80';stars='★★★★☆';}
+  else if(score>=sell){verdict='NEUTRAL';col='#ffd93d';stars='★★★☆☆';}
+  else if(score>=sSell){verdict='SELL';col='#ff9500';stars='★★☆☆☆';}
+  else{verdict='STRONG SELL';col='#ff3b5c';stars='★☆☆☆☆';}
+
+  var topReasons=reasons.sort((a,b)=>0).slice(0,3); // keep insertion order (most impactful first)
+  return{score,verdict,col,stars,reasons:topReasons,regime};
+}
+
 function wCard(tk,raw,spyRaw,ivInfo){
   var c=raw?raw.map(x=>typeof x==='object'?x.c:x):null;
   var vols=raw?raw.map(x=>typeof x==='object'?x.v:null):null;
@@ -1433,6 +1680,25 @@ function wCard(tk,raw,spyRaw,ivInfo){
   var ddCol=dd>-5?'#00e599':dd>-15?'#ffd93d':dd>-30?'#ff9500':'#ff3b5c';
   var a50=p>m50,a200=p>m200,gx=m50>m200,sig=a50&&a200?'bull':!a50&&!a200?'bear':'neut';
   var sc={bull:'#00e599',bear:'#ff3b5c',neut:'#ffd93d'}[sig];
+
+  // Buy/Sell signal
+  var spyCloses=spyRaw;
+  var bs=calcBuySell(c,vols,spyCloses,tk);
+  var bsHtml='';
+  if(bs){
+    var regimeTxt=bs.regime!=='neutral'?` · ${bs.regime==='bear'?'🐻 Bear regime':'🐂 Bull regime'}`:'';
+    bsHtml=`<div style="background:${bs.col}18;border:1px solid ${bs.col}44;border-radius:10px;padding:10px 12px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <div style="font-size:9px;color:var(--mt);margin-bottom:2px;letter-spacing:1px">SIGNAL${regimeTxt}</div>
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:24px;color:${bs.col};line-height:1">${bs.verdict}</div>
+        <div style="font-size:9px;color:var(--mt);margin-top:3px;line-height:1.5">${bs.reasons.map(r=>`<span style="color:${r.bull?'#00e599':'#ff3b5c'}">${r.bull?'▲':'▼'} ${r.t}</span>`).join('<br>')}</div>
+      </div>
+      <div style="text-align:right;flex-shrink:0;margin-left:10px">
+        <div style="font-size:18px">${bs.stars}</div>
+        <div style="font-size:13px;color:${bs.col};font-weight:600;margin-top:2px">${bs.score}/100</div>
+      </div>
+    </div>`;
+  }
   // Relative strength vs SPY
   var rsHtml='';
   if(spyRaw&&spyRaw.length>=22&&c.length>=22){
@@ -1450,7 +1716,7 @@ function wCard(tk,raw,spyRaw,ivInfo){
     var vRat=avgV>0?recentV/avgV:0;
     if(vRat>0)volHtml=`<span class="${vRat>1.5?'vol-badge vol-high':'vol-badge vol-norm'}">${vRat>1.5?'🔥':''} Vol ${fmt(vRat,1)}×</span>`;
   }
-  return`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div><span style="font-family:'Bebas Neue',sans-serif;font-size:20px;color:var(--ac)">${tk}</span><span style="font-size:9px;padding:2px 7px;border-radius:8px;margin-left:8px;background:${sc}22;color:${sc};border:1px solid ${sc}44">${sig==='bull'?'UPTREND':sig==='bear'?'DOWNTREND':'MIXED'}</span></div><button class="rmv" onclick="rmWL('${tk}')">✕</button></div><div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:10px"><div><div style="font-family:'Bebas Neue',sans-serif;font-size:32px;line-height:1">$${fmt(p,2)}</div><div style="font-size:11px;color:${chg>=0?'#00e599':'#ff3b5c'};margin-top:2px">${chg>=0?'▲ +':'▼ '}${fmt(Math.abs(chg),2)}%</div></div><div style="text-align:right;font-size:10px;color:var(--mt)"><div>50MA <span style="color:${a50?'#00e599':'#ff3b5c'}">${a50?'▲':'▼'} $${fmt(m50,0)}</span></div><div>200MA <span style="color:${a200?'#00e599':'#ff3b5c'}">${a200?'▲':'▼'} $${fmt(m200,0)}</span></div></div></div><div style="font-size:9px;color:var(--mt);display:flex;justify-content:space-between;margin-bottom:4px"><span>$${fmt(l,0)}</span><span style="color:var(--tx)">${rng}% of range</span><span>$${fmt(h,0)}</span></div><div class="rng"><div class="rnf" style="width:${rng}%"></div><div class="rnt" style="left:${rng}%"></div></div><div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:8px">${pill(a50?'pu':'pd',(a50?'▲':'▼')+' 50MA')}${pill(a200?'pu':'pd',(a200?'▲':'▼')+' 200MA')}${pill(gx?'pp':'pd',gx?'Golden ✦':'Death ✖')}${rsHtml}${volHtml}<span style="font-size:9px;padding:2px 8px;border-radius:8px;background:${ddCol}15;color:${ddCol}">DD ${fmt(dd,1)}%</span>${pH>-3?'<span class="pill pb">🚀 Near High</span>':''}</div>${ivInfo&&ivInfo.iv?"<span style=\"font-size:9px;padding:2px 8px;border-radius:8px;background:#a855f722;color:#a855f7\">IV "+ivInfo.iv+"%</span>":""}${renderTechnicals(c)}</div>`;
+  return`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div><span style="font-family:'Bebas Neue',sans-serif;font-size:20px;color:var(--ac)">${tk}</span><span style="font-size:9px;padding:2px 7px;border-radius:8px;margin-left:8px;background:${sc}22;color:${sc};border:1px solid ${sc}44">${sig==='bull'?'UPTREND':sig==='bear'?'DOWNTREND':'MIXED'}</span></div><button class="rmv" onclick="rmWL('${tk}')">✕</button></div>${bsHtml}<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:10px"><div><div style="font-family:'Bebas Neue',sans-serif;font-size:32px;line-height:1">$${fmt(p,2)}</div><div style="font-size:11px;color:${chg>=0?'#00e599':'#ff3b5c'};margin-top:2px">${chg>=0?'▲ +':'▼ '}${fmt(Math.abs(chg),2)}%</div></div><div style="text-align:right;font-size:10px;color:var(--mt)"><div>50MA <span style="color:${a50?'#00e599':'#ff3b5c'}">${a50?'▲':'▼'} $${fmt(m50,0)}</span></div><div>200MA <span style="color:${a200?'#00e599':'#ff3b5c'}">${a200?'▲':'▼'} $${fmt(m200,0)}</span></div></div></div><div style="font-size:9px;color:var(--mt);display:flex;justify-content:space-between;margin-bottom:4px"><span>$${fmt(l,0)}</span><span style="color:var(--tx)">${rng}% of range</span><span>$${fmt(h,0)}</span></div><div class="rng"><div class="rnf" style="width:${rng}%"></div><div class="rnt" style="left:${rng}%"></div></div><div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:8px">${pill(a50?'pu':'pd',(a50?'▲':'▼')+' 50MA')}${pill(a200?'pu':'pd',(a200?'▲':'▼')+' 200MA')}${pill(gx?'pp':'pd',gx?'Golden ✦':'Death ✖')}${rsHtml}${volHtml}<span style="font-size:9px;padding:2px 8px;border-radius:8px;background:${ddCol}15;color:${ddCol}">DD ${fmt(dd,1)}%</span>${pH>-3?'<span class="pill pb">🚀 Near High</span>':''}</div>${ivInfo&&ivInfo.iv?"<span style=\"font-size:9px;padding:2px 8px;border-radius:8px;background:#a855f722;color:#a855f7\">IV "+ivInfo.iv+"%</span>":""}${renderTechnicals(c)}</div>`;
 }
 
 // ── BREAKOUT SCANNER (expanded + volume) ─────────────────────────
