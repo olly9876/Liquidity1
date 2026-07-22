@@ -7,7 +7,6 @@
   <button class="nb" onclick="ST('vix',this)">⚡ VIX</button>
   <button class="nb" onclick="ST('macro',this)">🌐 Macro</button>
   <button class="nb" onclick="ST('m7',this)">✦ Mag 7</button>
-  <button class="nb" onclick="ST('ai',this)">🤖 AI Cost</button>
   <button class="nb" onclick="ST('rs',this)">📈 RS Rank</button>
   <button class="nb" onclick="ST('wl',this)">📋 Watchlist</button>
   <button class="nb" onclick="ST('scan',this)">🚀 Breakouts</button>
@@ -88,10 +87,6 @@
     <div class="dlt" id="move-d"></div>
     <div style="font-size:10px;color:var(--mt);margin-top:6px" id="move-i"></div>
     <svg class="sp" id="move-sp" viewBox="0 0 300 46" style="margin-top:8px"></svg>
-  </div>
-  <div class="card">
-    <div class="chdr"><div class="clbl">Equity ETF Bid-Ask</div><span class="badge br">REF DATA</span></div>
-    <div id="eqs"></div>
   </div>
   <div class="card">
     <div class="chdr"><div class="clbl">Crypto Bid-Ask</div><span class="badge bl" id="cryb">LOADING</span></div>
@@ -191,26 +186,6 @@
   </div>
   <div class="rts" id="m7-ts"></div>
   <button class="rbtn" onclick="loadM7(this)">⟳ Refresh Mag 7</button>
-</div>
-
-<!-- AI COST TAB -->
-<div class="tab" id="tab-ai">
-  <div class="sec">AI Model Costs</div>
-  <div class="card">
-    <div class="chdr"><div class="clbl">Cost per 1M Tokens</div><span class="badge br">REF Jun 2026</span></div>
-    <div style="font-size:9px;color:var(--mt);margin-bottom:10px">Input / Output pricing in USD. Context window in tokens.</div>
-    <div id="ai-table"></div>
-  </div>
-  <div class="card">
-    <div class="clbl" style="margin-bottom:8px">Output Cost Comparison (per 1M tokens)</div>
-    <div id="ai-bars"></div>
-  </div>
-  <div class="card">
-    <div class="clbl" style="margin-bottom:8px">Context Window Comparison</div>
-    <div id="ai-ctx"></div>
-  </div>
-  <div class="note">Prices from official provider documentation. Self-hosted open source models have near-zero marginal cost at scale. Prices trend downward ~2–3× per year historically.</div>
-  <div class="rts" id="ai-ts"></div>
 </div>
 
 <!-- RS RANK TAB -->
@@ -571,7 +546,6 @@ async function loadCommod(btn){
 // We fetch HYG and LQD and compute 30d return spread vs TLT as a proxy for spread direction.
 async function loadSpreads(btn){
   btnLoad(btn);
-  rEqS();
   loadCrypto();
 
   // Show reference while loading
@@ -662,12 +636,6 @@ function rMove(val,prev,hist,isRef){
   window._moveS=val<100?'bull':val<120?'neut':'bear';
   window._fg.move=val;
   compFG();
-}
-
-// ── EQUITY SPREADS (ref) ─────────────────────────────────────────
-var EQS=[{t:'SPY',b:0.3,m:5},{t:'QQQ',b:0.4,m:5},{t:'IWM',b:0.9,m:5},{t:'TLT',b:1.6,m:8},{t:'GLD',b:1.8,m:8},{t:'HYG',b:3.2,m:10}];
-function rEqS(){
-  $('eqs').innerHTML=EQS.map(s=>{var c=s.b<1?'#00e599':s.b<2.5?'#ffd93d':'#ff3b5c',p=Math.min(100,s.b/s.m*100);return`<div class="brow"><div class="blbl">${s.t}</div><div class="btrk"><div class="bfil" style="width:${p}%;background:${c}"></div></div><div class="bval" style="color:${c}">${s.b} bps</div></div>`}).join('');
 }
 
 // ── CRYPTO SPREADS ───────────────────────────────────────────────
@@ -896,14 +864,6 @@ function renderCal(){
     {d:'2026-07-14',t:'CPI Release',cat:'cpi'},
     {d:'2026-08-12',t:'CPI Release',cat:'cpi'},
     {d:'2026-09-10',t:'CPI Release',cat:'cpi'},
-    // M7 Earnings Q2 2026 (estimated)
-    {d:'2026-04-23',t:'TSLA Earnings (est)',cat:'earn'},
-    {d:'2026-04-29',t:'META Earnings (est)',cat:'earn'},
-    {d:'2026-04-30',t:'MSFT Earnings (est)',cat:'earn'},
-    {d:'2026-04-30',t:'GOOGL Earnings (est)',cat:'earn'},
-    {d:'2026-05-01',t:'AMZN Earnings (est)',cat:'earn'},
-    {d:'2026-05-07',t:'AAPL Earnings (est)',cat:'earn'},
-    {d:'2026-05-28',t:'NVDA Earnings (est)',cat:'earn'},
   ];
   // Sort and filter to next 10 upcoming
   var upcoming=events
@@ -931,19 +891,7 @@ function renderCal(){
 }
 
 // ── MAG 7 ─────────────────────────────────────────────────────────
-// M7 next earnings dates (estimated Q2 2026)
 var M7=['AAPL','MSFT','NVDA','GOOGL','AMZN','META','TSLA'];
-var M7_EARN={
-  TSLA:'2026-04-23',META:'2026-04-29',MSFT:'2026-04-30',
-  GOOGL:'2026-04-30',AMZN:'2026-05-01',AAPL:'2026-05-07',NVDA:'2026-05-28'
-};
-function earnCountdown(tk){
-  var d=M7_EARN[tk];if(!d)return'';
-  var days=Math.ceil((new Date(d)-new Date())/(86400000));
-  if(days<0)return''; // past
-  var col=days<=7?'#ff6b35':days<=14?'#ffd93d':'#a855f7';
-  return`<span style="font-size:9px;padding:2px 8px;border-radius:8px;background:${col}22;color:${col};border:1px solid ${col}33">💰 Earnings ${days===0?'today':'in '+days+'d'}</span>`;
-}
 var M7_NAMES={AAPL:'Apple',MSFT:'Microsoft',NVDA:'Nvidia',GOOGL:'Alphabet',AMZN:'Amazon',META:'Meta',TSLA:'Tesla'};
 
 async function loadM7(btn){
@@ -1045,7 +993,6 @@ async function loadM7(btn){
       ${pill(a50?'pu':'pd',(a50?'▲':'▼')+' 50MA')}${pill(a200?'pu':'pd',(a200?'▲':'▼')+' 200MA')}
       <span style="font-size:9px;padding:2px 8px;border-radius:8px;background:${rsCol}15;color:${rsCol}">${rs>=0?'▲':'▼'} vs SPY</span>
       <span style="font-size:9px;padding:2px 8px;border-radius:8px;background:${ddCol}15;color:${ddCol}">DD ${fmt(dd,1)}%</span>
-      ${earnCountdown(tk)}
       ${earnHtml}
       ${pH>=-3?'<span class="pill pb">🚀 Near High</span>':''}
     </div></div>`;
@@ -1057,89 +1004,6 @@ async function loadM7(btn){
     if(el)el.innerHTML='<div class="rnote">⚠ Error: '+e.message+'</div>';
     btnDone(btn,false);
   }
-}
-
-// ── AI MODEL PRICING ─────────────────────────────────────────────
-var AI_MODELS=[
-  // Anthropic
-  {provider:'Anthropic',model:'Claude Opus 4',input:15.00,output:75.00,ctx:200000,tier:'frontier',updated:'Jun 2026',note:'Most capable. Best for complex reasoning and long-context tasks.'},
-  {provider:'Anthropic',model:'Claude Sonnet 4',input:3.00,output:15.00,ctx:200000,tier:'mid',updated:'Jun 2026',note:'Best balance of capability and cost. Recommended for most use cases.'},
-  {provider:'Anthropic',model:'Claude Haiku 3.5',input:0.80,output:4.00,ctx:200000,tier:'fast',updated:'Jun 2026',note:'Fastest and cheapest Anthropic model. Ideal for high-volume tasks.'},
-  // OpenAI
-  {provider:'OpenAI',model:'GPT-4o',input:2.50,output:10.00,ctx:128000,tier:'frontier',updated:'Jun 2026',note:'OpenAI flagship. Strong multimodal capabilities.'},
-  {provider:'OpenAI',model:'GPT-4o mini',input:0.15,output:0.60,ctx:128000,tier:'fast',updated:'Jun 2026',note:'Most cost-effective OpenAI model. Good for classification and extraction.'},
-  {provider:'OpenAI',model:'o3',input:10.00,output:40.00,ctx:200000,tier:'frontier',updated:'Jun 2026',note:'Extended thinking. Best for maths, coding, science.'},
-  {provider:'OpenAI',model:'o4-mini',input:1.10,output:4.40,ctx:200000,tier:'mid',updated:'Jun 2026',note:'Efficient reasoning model. Strong coding performance.'},
-  // Google
-  {provider:'Google',model:'Gemini 2.5 Pro',input:1.25,output:10.00,ctx:1000000,tier:'frontier',updated:'Jun 2026',note:'Longest context window. Strong at document analysis.'},
-  {provider:'Google',model:'Gemini 2.5 Flash',input:0.075,output:0.30,ctx:1000000,tier:'fast',updated:'Jun 2026',note:'Extremely cheap with massive context. Best cost/context ratio.'},
-  // Meta / Open Source
-  {provider:'Meta (self-hosted)',model:'Llama 3.3 70B',input:0.23,output:0.40,ctx:128000,tier:'open',updated:'Jun 2026',note:'Best open-source model. Near-frontier quality. Via Groq/Together.'},
-  {provider:'Meta (self-hosted)',model:'Llama 3.1 405B',input:3.00,output:3.00,ctx:128000,tier:'open',updated:'Jun 2026',note:'Largest open model. Matches GPT-4 class on many benchmarks.'},
-  // xAI
-  {provider:'xAI',model:'Grok 3',input:3.00,output:15.00,ctx:131072,tier:'frontier',updated:'Jun 2026',note:'Strong reasoning. Real-time X/Twitter data access.'},
-];
-
-var AI_TIER_COL={frontier:'#a855f7',mid:'#00d4ff',fast:'#00e599',open:'#ff9500'};
-
-function renderAI(){
-  // Table
-  var tbl=$('ai-table');
-  if(tbl){
-    var byProvider={};
-    AI_MODELS.forEach(m=>{(byProvider[m.provider]=byProvider[m.provider]||[]).push(m);});
-    tbl.innerHTML=Object.entries(byProvider).map(([prov,models])=>`
-      <div style="margin-bottom:12px">
-        <div style="font-size:9px;letter-spacing:2px;color:var(--mt);margin-bottom:6px">${prov.toUpperCase()}</div>
-        ${models.map(m=>{
-          var tc=AI_TIER_COL[m.tier]||'#5a7080';
-          return`<div style="padding:8px;background:var(--s2);border-radius:8px;margin-bottom:6px;border-left:3px solid ${tc}">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-              <span style="font-size:11px;color:var(--tx);font-weight:500">${m.model}</span>
-              <span style="font-size:9px;padding:1px 7px;border-radius:8px;background:${tc}22;color:${tc}">${m.tier.toUpperCase()}</span>
-            </div>
-            <div style="display:flex;gap:12px;margin-bottom:4px">
-              <span style="font-size:10px;color:var(--mt)">In: <span style="color:var(--tx)">$${m.input}/M</span></span>
-              <span style="font-size:10px;color:var(--mt)">Out: <span style="color:var(--tx)">$${m.output}/M</span></span>
-              <span style="font-size:10px;color:var(--mt)">Ctx: <span style="color:var(--tx)">${m.ctx>=1000000?(m.ctx/1000000).toFixed(0)+'M':(m.ctx/1000).toFixed(0)+'k'}</span></span>
-            </div>
-            <div style="font-size:9px;color:var(--mt)">${m.note}</div>
-          </div>`;
-        }).join('')}
-      </div>`).join('');
-  }
-  // Output cost bar chart
-  var bars=$('ai-bars');
-  if(bars){
-    var sorted=[...AI_MODELS].sort((a,b)=>b.output-a.output);
-    var maxOut=sorted[0].output;
-    bars.innerHTML=sorted.map(m=>{
-      var tc=AI_TIER_COL[m.tier]||'#5a7080';
-      var pct=m.output/maxOut*100;
-      return`<div class="brow">
-        <div class="blbl" style="font-size:8px;width:100px">${m.model.replace('Claude ','').replace('GPT-','').replace('Gemini ','').replace('Llama ','L').replace('Grok ','G')}</div>
-        <div class="btrk"><div class="bfil" style="width:${pct}%;background:${tc}"></div></div>
-        <div class="bval" style="color:${tc};font-size:9px">$${m.output}/M</div>
-      </div>`;
-    }).join('');
-  }
-  // Context window bar chart
-  var ctx=$('ai-ctx');
-  if(ctx){
-    var sorted2=[...AI_MODELS].sort((a,b)=>b.ctx-a.ctx);
-    var maxCtx=sorted2[0].ctx;
-    ctx.innerHTML=sorted2.map(m=>{
-      var tc=AI_TIER_COL[m.tier]||'#5a7080';
-      var pct=m.ctx/maxCtx*100;
-      var ctxStr=m.ctx>=1000000?(m.ctx/1000000).toFixed(0)+'M':(m.ctx/1000).toFixed(0)+'k';
-      return`<div class="brow">
-        <div class="blbl" style="font-size:8px;width:100px">${m.model.replace('Claude ','').replace('GPT-','').replace('Gemini ','').replace('Llama ','L').replace('Grok ','G')}</div>
-        <div class="btrk"><div class="bfil" style="width:${pct}%;background:${tc}"></div></div>
-        <div class="bval" style="color:${tc};font-size:9px">${ctxStr}</div>
-      </div>`;
-    }).join('');
-  }
-  sv('ai-ts','Ref data Jun 2026');
 }
 
 // ── RS RANKING ────────────────────────────────────────────────────
@@ -1490,13 +1354,6 @@ function toWeekly(closes){
   return w.length>=10?w:null;
 }
 
-// Days until earnings for M7
-function earnDays(tk){
-  var d=M7_EARN[tk];if(!d)return null;
-  var days=Math.ceil((new Date(d)-new Date())/86400000);
-  return days>=0?days:null;
-}
-
 // ── IMPROVED BUY / SELL SCORER (12 signals) ───────────────────────
 function calcBuySell(closes,vols,spyRaw,tk){
   if(!closes||closes.length<30)return null;
@@ -1636,18 +1493,6 @@ function calcBuySell(closes,vols,spyRaw,tk){
   // ── 11. Regime adjustment ────────────────────────────────────────
   if(regime==='bear'){score-=8;reasons.push({t:'🐻 Bear market regime',bull:false});}
   else if(regime==='bull'){score+=5;reasons.push({t:'🐂 Bull market regime',bull:true});}
-
-  // ── 12. Earnings proximity ───────────────────────────────────────
-  var edays=earnDays(tk);
-  if(edays!=null){
-    if(edays<=3){
-      score=50+(score-50)*0.3; // collapse to near-neutral
-      reasons.push({t:'⚠ Earnings in '+edays+'d — hold signal',bull:false});
-    }else if(edays<=10){
-      score=50+(score-50)*0.6;
-      reasons.push({t:'Earnings in '+edays+'d — reduce size',bull:false});
-    }
-  }
 
   // ── Final ────────────────────────────────────────────────────────
   // Guard against any NaN that slipped through
@@ -1942,9 +1787,8 @@ function compFG(){
 }
 
 // ── INIT ─────────────────────────────────────────────────────────
-rEqS();lWL();refWL();
+lWL();refWL();
 fetchNews();
-renderAI();
 rYC(MR.y2,MR.y10);rMom(null,null);rDXY(null);rGBP(null);rSecs(null);
 rVix(VR.cur,VR.prev,VR.v3m,null,true);
 rPC(VR.cur,VR.v3m,true);
