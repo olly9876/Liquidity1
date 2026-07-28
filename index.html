@@ -409,10 +409,12 @@ function cClear(){
   try{Object.keys(localStorage).filter(k=>k.startsWith('liq_c_')).forEach(k=>localStorage.removeItem(k));}catch(e){}
 }
 
-async function fC(sym,days=400,withVol=false){
+async function fC(sym,days=400,withVol=false,forceFresh=false){
   var ck=sym+'_'+days+'_'+(withVol?1:0);
-  var cached=cGet(ck);
-  if(cached)return cached;
+  if(!forceFresh){
+    var cached=cGet(ck);
+    if(cached)return cached;
+  }
   var yh=toYH(sym);
   var range=days>365?'2y':days>180?'1y':'6mo';
   var yhUrl='https://query1.finance.yahoo.com/v8/finance/chart/'+encodeURIComponent(yh)+'?interval=1d&range='+range+'&includePrePost=false';
@@ -486,7 +488,7 @@ async function loadCommod(btn){
   // Note: HG=F (copper) is quoted in USD cents/lb on Yahoo — divide by 100
   var syms={'GC=F':'gold','SI=F':'silver','CL=F':'wti','BZ=F':'brent','NG=F':'ng','HG=F':'copper'};
   var keys=Object.keys(syms);
-  var res=await Promise.allSettled(keys.map(k=>fC(k,60,false)));
+  var res=await Promise.allSettled(keys.map(k=>fC(k,60,false,!!btn)));
   var D={};keys.forEach((k,i)=>D[syms[k]]=res[i].value||null);
 
   // Fix copper: Yahoo returns cents/lb, convert to $/lb
@@ -553,7 +555,7 @@ async function loadSpreads(btn){
   rMove(CR.move,CR.move,null,true);
 
   // Fetch HYG, LQD, TLT, and MOVE proxy (^TNX as rate ref)
-  var[hyg,lqd,tlt,tnx]=await Promise.all([fC('HYG',60,false),fC('LQD',60,false),fC('TLT',60,false),fC('^TNX',60,false)]);
+  var[hyg,lqd,tlt,tnx]=await Promise.all([fC('HYG',60,false,!!btn),fC('LQD',60,false,!!btn),fC('TLT',60,false,!!btn),fC('^TNX',60,false,!!btn)]);
 
   // Credit spread direction: if HYG underperforming TLT → spreads widening
   var live=false;
@@ -689,7 +691,7 @@ async function loadVix(btn){
   btnLoad(btn);
   rVix(VR.cur,VR.prev,VR.v3m,null,true);
   rPC(VR.cur,VR.v3m,true);
-  var[vix,vix3m]=await Promise.all([fC('^VIX',35),fC('^VIX3M',35)]);
+  var[vix,vix3m]=await Promise.all([fC('^VIX',35,false,!!btn),fC('^VIX3M',35,false,!!btn)]);
   var ok=!!(vix&&vix.length>=2);
   if(ok)rVix(vix[vix.length-1],vix[vix.length-2],vix3m?vix3m[vix3m.length-1]:VR.v3m,vix.slice(-30),false);
   // Update term structure with live data
@@ -792,7 +794,7 @@ async function loadMacro(btn){
   rYC(MR.y2,MR.y10);rMom(null,null);rDXY(null);rGBP(null);rSecs(null);
   renderCal();
   var syms=['^TNX','^IRX','SPY','QQQ','DX-Y.NYB','GBPUSD=X','XLK','XLY','XLI','XLF','XLE','XLV','XLP','XLU'];
-  var res=await Promise.allSettled(syms.map(s=>fC(s,400)));
+  var res=await Promise.allSettled(syms.map(s=>fC(s,400,false,!!btn)));
   var D={};syms.forEach((s,i)=>D[s]=res[i].value||null);
   var y10=D['^TNX']?D['^TNX'][D['^TNX'].length-1]:MR.y10;
   var y3m=D['^IRX']?D['^IRX'][D['^IRX'].length-1]:MR.y2;
@@ -900,7 +902,7 @@ async function loadM7(btn){
   if(el)el.innerHTML='<div style="font-size:10px;color:var(--mt);text-align:center;padding:20px">Loading…</div>';
   try{
   var syms=['SPY',...M7];
-  var res=await Promise.allSettled(syms.map(s=>fC(s,400,false)));
+  var res=await Promise.allSettled(syms.map(s=>fC(s,400,false,!!btn)));
   var D={};syms.forEach((s,i)=>D[s]=res[i].value||null);
   var spy=D['SPY'];
   var ok=!!spy;
@@ -1022,7 +1024,7 @@ async function loadRS(btn){
     'GLD','SLV','TLT','HYG','BTC-USD',
     'TSM','ASML','MELI','ARM',
   ];
-  var res=await Promise.allSettled(RS_UNI.map(s=>fC(s,30,false)));
+  var res=await Promise.allSettled(RS_UNI.map(s=>fC(s,30,false,!!btn)));
   var D={};RS_UNI.forEach((s,i)=>D[s]=res[i].value||null);
   var spy=D['SPY'];
   var spyRet=spy&&spy.length>=22?(spy[spy.length-1]-spy[spy.length-22])/spy[spy.length-22]*100:0;
@@ -1263,7 +1265,7 @@ async function refWL(btn){
   if(e)e.style.display='none';
   if(r)r.innerHTML='<div style="font-size:10px;color:var(--mt);text-align:center;padding:14px">Loading…</div>';
   var allSyms=['SPY',...WL];
-  var res=await Promise.allSettled(allSyms.map(t=>fC(t,400,true)));
+  var res=await Promise.allSettled(allSyms.map(t=>fC(t,400,true,!!btn)));
   var spyData=res[0].value?res[0].value.map(x=>typeof x==='object'?x.c:x):null;
   // Fetch options IV for each watchlist stock
   var ivData={};
@@ -1600,7 +1602,7 @@ async function runScan(btn){
   var all=[];
   for(var i=0;i<UNI.length;i+=12){
     var batch=UNI.slice(i,i+12);
-    var bres=await Promise.allSettled(batch.map(s=>fC(s,400,true)));
+    var bres=await Promise.allSettled(batch.map(s=>fC(s,400,true,!!btn)));
     bres.forEach((r,j)=>all.push({t:batch[j],raw:r.value||null}));
   }
   var hi=[],lo=[];
