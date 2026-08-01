@@ -262,7 +262,12 @@
     <div style="font-size:14px;margin-top:4px" id="fg-l">—</div>
   </div>
   <div class="card">
-    <div class="clbl" style="margin-bottom:8px">Components (9 signals)</div>
+    <div class="chdr"><div class="clbl">7-Day Trend</div><span class="badge" id="fg-trend-b">—</span></div>
+    <svg class="sp" id="fg-hist-sp" viewBox="0 0 300 46"></svg>
+    <div style="font-size:9px;color:var(--mt);margin-top:4px" id="fg-hist-i"></div>
+  </div>
+  <div class="card">
+    <div class="clbl" style="margin-bottom:8px">Components (9 signals · weighted by category)</div>
     <div id="fg-c"></div>
   </div>
   <div class="card">
@@ -1669,6 +1674,43 @@ async function recalcFG(btn){
   btnDone(btn,true);
 }
 
+// ── F/G SCORE HISTORY (localStorage, last 30 days) ────────────────
+function lFGHist(){
+  try{return JSON.parse(localStorage.getItem('liq_fg_hist')||'[]');}catch(e){return[];}
+}
+function sFGHist(hist){
+  try{localStorage.setItem('liq_fg_hist',JSON.stringify(hist.slice(-30)));}catch(e){}
+}
+function recordFGScore(score){
+  var today=new Date().toISOString().slice(0,10);
+  var hist=lFGHist();
+  var last=hist[hist.length-1];
+  if(last&&last.d===today){last.s=score;} // update today's entry
+  else{hist.push({d:today,s:score});}
+  sFGHist(hist);
+  return hist;
+}
+function renderFGHistory(){
+  var hist=lFGHist();
+  if(hist.length<2){
+    var b=$('fg-trend-b');if(b){b.textContent='BUILDING';b.className='badge';}
+    var i=$('fg-hist-i');if(i)i.textContent='History builds as you use the app daily. Check back tomorrow.';
+    return;
+  }
+  var vals=hist.map(h=>h.s);
+  spark('fg-hist-sp',vals,'#00d4ff');
+  var first=vals[0],last=vals[vals.length-1];
+  var diff=last-first;
+  var b=$('fg-trend-b');
+  if(b){
+    var col=diff>5?'#00e599':diff<-5?'#ff3b5c':'#ffd93d';
+    var lbl=diff>5?'IMPROVING':diff<-5?'DETERIORATING':'STABLE';
+    b.textContent=lbl;b.className='badge';b.style.cssText=`background:${col}22;color:${col};border:1px solid ${col}44`;
+  }
+  var i=$('fg-hist-i');
+  if(i)i.textContent=hist.length+' day'+(hist.length>1?'s':'')+' tracked · '+first+' → '+last+' ('+(diff>=0?'+':'')+diff+' pts)';
+}
+
 // ── FEAR/GREED — continuous scoring ──────────────────────────────
 function clamp(v,mn,mx){return Math.max(mn,Math.min(mx,v));}
 
@@ -1679,67 +1721,50 @@ function compFG(){
     var r=window._fg;
 
     // Each signal returns 0-100 (0=extreme fear, 100=extreme greed)
-    // Falls back to 50 (neutral) if data not available
+    // Falls back to 50 (neutral) if data not available — flagged as missing
 
     // 1. VIX Level: VIX=12→100, VIX=25→50, VIX=40→0
-    var sVix=r.vix!=null
-      ?clamp(100-(r.vix-12)/(40-12)*100,0,100)
-      :50;
-
+    var sVix=r.vix!=null?clamp(100-(r.vix-12)/(40-12)*100,0,100):50;
     // 2. VIX Term Structure: spread=+10→90, spread=0→50, spread=-10→10
-    var sVixTerm=r.vixSpread!=null
-      ?clamp(50+r.vixSpread*4,0,100)
-      :50;
-
+    var sVixTerm=r.vixSpread!=null?clamp(50+r.vixSpread*4,0,100):50;
     // 3. MOVE Index: MOVE=60→95, MOVE=100→50, MOVE=150→5
-    var sMove=r.move!=null
-      ?clamp(100-(r.move-60)/(150-60)*95,0,100)
-      :50;
-
+    var sMove=r.move!=null?clamp(100-(r.move-60)/(150-60)*95,0,100):50;
     // 4. Yield Curve (bps, 10Y-3M): +200→85, 0→50, -100→20
-    var sYC=r.ycSpread!=null
-      ?clamp(50+r.ycSpread/300*50,0,100)
-      :50;
-
+    var sYC=r.ycSpread!=null?clamp(50+r.ycSpread/300*50,0,100):50;
     // 5. SPY vs 200MA (%): +10%→85, 0→50, -10%→15
-    var sMom=r.spyVs200!=null
-      ?clamp(50+r.spyVs200*3.5,0,100)
-      :50;
-
+    var sMom=r.spyVs200!=null?clamp(50+r.spyVs200*3.5,0,100):50;
     // 6. HY Credit Spread (bps): 200→90, 350→55, 600→10
-    var sCredit=r.hySpr!=null
-      ?clamp(100-(r.hySpr-150)/(650-150)*90,0,100)
-      :50;
-
+    var sCredit=r.hySpr!=null?clamp(100-(r.hySpr-150)/(650-150)*90,0,100):50;
     // 7. Gold/Silver Ratio: 60→90, 80→50, 100→10
-    var sGSR=r.gsr!=null
-      ?clamp(100-(r.gsr-55)/(105-55)*90,0,100)
-      :50;
-
+    var sGSR=r.gsr!=null?clamp(100-(r.gsr-55)/(105-55)*90,0,100):50;
     // 8. GBP/USD: 1.40→90, 1.25→50, 1.10→10
-    var sGBP=r.gbp!=null
-      ?clamp(50+(r.gbp-1.25)*300,0,100)
-      :50;
-
+    var sGBP=r.gbp!=null?clamp(50+(r.gbp-1.25)*300,0,100):50;
     // 9. Market Breadth: % stocks above 200MA: 75%→90, 50%→50, 25%→10
-    var sBreadth=r.breadth!=null
-      ?clamp((r.breadth-25)/(75-25)*80+10,0,100)
-      :50;
+    var sBreadth=r.breadth!=null?clamp((r.breadth-25)/(75-25)*80+10,0,100):50;
 
-    var scores=[sVix,sVixTerm,sMove,sYC,sMom,sCredit,sGSR,sGBP,sBreadth];
-    var score=Math.round(scores.reduce((a,b)=>a+b,0)/scores.length);
+    // ── Category-weighted scoring ────────────────────────────────
+    // Correlated signals grouped so e.g. 3 volatility measures don't
+    // dominate a 9-signal flat average vs 2 safe-haven measures.
+    var catVol=(sVix+sVixTerm+sMove)/3;        // Volatility & Fear
+    var catCredit=(sYC+sCredit)/2;              // Rates & Credit
+    var catEquity=(sMom+sBreadth)/2;            // Equity Trend
+    var catSafe=(sGSR+sGBP)/2;                  // Safe Haven / FX
+
+    var W={vol:0.30,credit:0.25,equity:0.30,safe:0.15};
+    var score=Math.round(catVol*W.vol+catCredit*W.credit+catEquity*W.equity+catSafe*W.safe);
 
     var comps=[
-      {n:'VIX Level',    sc:sVix,      raw:r.vix!=null?'VIX '+fmt(r.vix,1):'no data'},
-      {n:'VIX Term',     sc:sVixTerm,  raw:r.vixSpread!=null?(r.vixSpread>=0?'+':'')+fmt(r.vixSpread,1)+' spread':'no data'},
-      {n:'MOVE Index',   sc:sMove,     raw:r.move!=null?'MOVE ~'+Math.round(r.move):'no data'},
-      {n:'Yield Curve',  sc:sYC,       raw:r.ycSpread!=null?(r.ycSpread>=0?'+':'')+r.ycSpread+'bps':'no data'},
-      {n:'SPY vs 200MA', sc:sMom,      raw:r.spyVs200!=null?(r.spyVs200>=0?'+':'')+fmt(r.spyVs200,1)+'%':'no data'},
-      {n:'Credit Sprd',  sc:sCredit,   raw:r.hySpr!=null?Math.round(r.hySpr)+'bps HY':'no data'},
-      {n:'Gold/Silver',  sc:sGSR,      raw:r.gsr!=null?'ratio '+fmt(r.gsr,1):'no data'},
-      {n:'GBP/USD',      sc:sGBP,      raw:r.gbp!=null?fmt(r.gbp,4):'no data'},
-      {n:'Breadth',      sc:sBreadth,  raw:r.breadth!=null?r.breadth+'% >200MA':'no data'},
+      {n:'VIX Level',    sc:sVix,      raw:r.vix!=null?'VIX '+fmt(r.vix,1):'no data',missing:r.vix==null,cat:'Volatility'},
+      {n:'VIX Term',     sc:sVixTerm,  raw:r.vixSpread!=null?(r.vixSpread>=0?'+':'')+fmt(r.vixSpread,1)+' spread':'no data',missing:r.vixSpread==null,cat:'Volatility'},
+      {n:'MOVE Index',   sc:sMove,     raw:r.move!=null?'MOVE ~'+Math.round(r.move):'no data',missing:r.move==null,cat:'Volatility'},
+      {n:'Yield Curve',  sc:sYC,       raw:r.ycSpread!=null?(r.ycSpread>=0?'+':'')+r.ycSpread+'bps':'no data',missing:r.ycSpread==null,cat:'Rates/Credit'},
+      {n:'Credit Sprd',  sc:sCredit,   raw:r.hySpr!=null?Math.round(r.hySpr)+'bps HY':'no data',missing:r.hySpr==null,cat:'Rates/Credit'},
+      {n:'SPY vs 200MA', sc:sMom,      raw:r.spyVs200!=null?(r.spyVs200>=0?'+':'')+fmt(r.spyVs200,1)+'%':'no data',missing:r.spyVs200==null,cat:'Equity Trend'},
+      {n:'Breadth',      sc:sBreadth,  raw:r.breadth!=null?r.breadth+'% >200MA':'no data',missing:r.breadth==null,cat:'Equity Trend'},
+      {n:'Gold/Silver',  sc:sGSR,      raw:r.gsr!=null?'ratio '+fmt(r.gsr,1):'no data',missing:r.gsr==null,cat:'Safe Haven'},
+      {n:'GBP/USD',      sc:sGBP,      raw:r.gbp!=null?fmt(r.gbp,4):'no data',missing:r.gbp==null,cat:'Safe Haven'},
     ];
+    var missingCount=comps.filter(c=>c.missing).length;
 
     // Update needle
     var n=$('fg-n');
@@ -1759,19 +1784,27 @@ function compFG(){
       changeHtml=`<div style="font-size:11px;color:${dc};margin-top:2px">${diff>0?'▲ +':'▼ '}${diff} from ${_lastFGScore}</div>`;
     }
     _lastFGScore=score;
-    var fl=$('fg-l');if(fl){fl.innerHTML=lbl+(changeHtml?'<br>'+changeHtml:'');fl.style.color=col;}
+    var missingHtml=missingCount>0?`<div style="font-size:9px;color:var(--warn);margin-top:3px">⚠ ${missingCount} signal${missingCount>1?'s':''} using neutral fallback (no data)</div>`:'';
+    var fl=$('fg-l');if(fl){fl.innerHTML=lbl+(changeHtml?'<br>'+changeHtml:'')+missingHtml;fl.style.color=col;}
 
     var fc=$('fg-c');
     if(fc){
-      fc.innerHTML=comps.map(c=>{
-        var cc=c.sc>=60?'#00e599':c.sc>=40?'#ffd93d':'#ff3b5c';
-        return'<div class="brow">'
-          +'<div class="blbl" style="font-size:9px;width:90px">'+c.n+'</div>'
-          +'<div class="btrk"><div class="bfil" style="width:'+c.sc.toFixed(0)+'%;background:'+cc+'"></div></div>'
-          +'<div style="flex-shrink:0;text-align:right;min-width:70px">'
-          +'<div style="font-size:10px;color:'+cc+'">'+Math.round(c.sc)+'</div>'
-          +'<div style="font-size:8px;color:var(--mt)">'+c.raw+'</div>'
-          +'</div></div>';
+      var byCat={};comps.forEach(c=>{(byCat[c.cat]=byCat[c.cat]||[]).push(c);});
+      var catW={'Volatility':'30%','Rates/Credit':'25%','Equity Trend':'30%','Safe Haven':'15%'};
+      fc.innerHTML=Object.entries(byCat).map(([cat,items])=>{
+        var header=`<div style="font-size:8px;letter-spacing:1px;color:var(--mt);margin:8px 0 4px;text-transform:uppercase">${cat} · weight ${catW[cat]}</div>`;
+        var rows=items.map(c=>{
+          var cc=c.missing?'#5a7080':c.sc>=60?'#00e599':c.sc>=40?'#ffd93d':'#ff3b5c';
+          var missingBadge=c.missing?'<span style="color:var(--warn)">⚠ </span>':'';
+          return'<div class="brow">'
+            +'<div class="blbl" style="font-size:9px;width:90px">'+c.n+'</div>'
+            +'<div class="btrk" style="opacity:'+(c.missing?'0.4':'1')+'"><div class="bfil" style="width:'+c.sc.toFixed(0)+'%;background:'+cc+(c.missing?';background-image:repeating-linear-gradient(45deg,transparent,transparent 3px,'+cc+' 3px,'+cc+' 5px)':'')+'"></div></div>'
+            +'<div style="flex-shrink:0;text-align:right;min-width:70px">'
+            +'<div style="font-size:10px;color:'+cc+'">'+Math.round(c.sc)+'</div>'
+            +'<div style="font-size:8px;color:var(--mt)">'+missingBadge+c.raw+'</div>'
+            +'</div></div>';
+        }).join('');
+        return header+rows;
       }).join('');
     }
 
@@ -1784,6 +1817,10 @@ function compFG(){
         :'Extreme fear — historically strong long-term entry. Scale in carefully.';
     }
     sv('fg-ts','Score updated '+ts());
+
+    // Record to history and refresh trend chart
+    recordFGScore(score);
+    renderFGHistory();
   }catch(e){
     var fi2=$('fg-i');
     if(fi2)fi2.textContent='Error: '+e.message;
