@@ -1272,61 +1272,59 @@ async function refWL(btn){
   var allSyms=['SPY',...WL];
   var res=await Promise.allSettled(allSyms.map(t=>fC(t,400,true,!!btn)));
   var spyData=res[0].value?res[0].value.map(x=>typeof x==='object'?x.c:x):null;
-  // Fetch options IV for each watchlist stock
-  var ivData={};
-  await Promise.allSettled(WL.map(async tk=>{
-    try{
-      var url='https://query1.finance.yahoo.com/v7/finance/options/'+tk;
-      var rv=await tF(PROXY+encodeURIComponent(url),10000);
-      if(!rv.ok)return;
-      var j=await rv.json();
-      var chain=j.optionChain.result[0];
-      var calls=chain.options[0]&&chain.options[0].calls||[];
-      // Get ATM call IV
-      var price=chain.quote&&chain.quote.regularMarketPrice||0;
-      var atm=calls.reduce((best,c)=>Math.abs(c.strike-price)<Math.abs((best.strike||999)-price)?c:best,{});
-      if(atm.impliedVolatility)ivData[tk]={iv:parseFloat((atm.impliedVolatility*100).toFixed(1))};
-    }catch(e){}
-  }));
-  // Calculate P/E and PEG from quarterly EPS via earnings module (no crumb needed)
   var wlPrices={};
   WL.forEach((t,i)=>{var c=res[i+1].value;if(c&&c.length)wlPrices[t]=c[c.length-1].c!=null?c[c.length-1].c:c[c.length-1];});
-  var peData={};
+
+  // Fetch IV + P/E/PEG together, one concurrent stage per stock (not two sequential ones)
+  var ivData={},peData={};
   await Promise.allSettled(WL.map(async tk=>{
-    try{
-      var eurl='https://query1.finance.yahoo.com/v10/finance/quoteSummary/'+tk+'?modules=earnings';
-      var er=await tF(PROXY+encodeURIComponent(eurl),10000);
-      if(!er.ok)return;
-      var ej=await er.json();
-      var q=ej.quoteSummary.result[0].earnings.earningsChart.quarterly;
-      if(!q||!q.length)return;
-      // Filter to only quarters that have actually reported — Yahoo often
-      // includes an upcoming quarter at the end with estimate but no actual yet
-      var reported=q.filter(x=>x.actual&&x.actual.raw!=null);
-      if(reported.length<4)return;
-      var actuals=reported.map(x=>x.actual.raw);
-      // TTM EPS = sum of most recent 4 reported quarters
-      var last4=actuals.slice(-4);
-      var ttmEPS=last4.reduce((a,b)=>a+b,0);
-      var price=wlPrices[tk];
-      if(!price||ttmEPS<=0)return; // P/E undefined for zero/negative earnings
-      var pe=parseFloat((price/ttmEPS).toFixed(1));
-      var entry={pe};
-      // PEG needs 8 reported quarters — current TTM vs year-ago TTM for growth rate
-      if(actuals.length>=8){
-        var prior4=actuals.slice(-8,-4);
-        var priorTTM=prior4.reduce((a,b)=>a+b,0);
-        if(priorTTM>0){
-          var growthPct=(ttmEPS-priorTTM)/priorTTM*100;
-          if(growthPct>0){
-            entry.peg=parseFloat((pe/growthPct).toFixed(2));
-            entry.growth=parseFloat(growthPct.toFixed(1));
+    var ivP=(async()=>{
+      try{
+        var url='https://query1.finance.yahoo.com/v7/finance/options/'+tk;
+        var rv=await tF(PROXY+encodeURIComponent(url),10000);
+        if(!rv.ok)return;
+        var j=await rv.json();
+        var chain=j.optionChain.result[0];
+        var calls=chain.options[0]&&chain.options[0].calls||[];
+        var price=chain.quote&&chain.quote.regularMarketPrice||0;
+        var atm=calls.reduce((best,c)=>Math.abs(c.strike-price)<Math.abs((best.strike||999)-price)?c:best,{});
+        if(atm.impliedVolatility)ivData[tk]={iv:parseFloat((atm.impliedVolatility*100).toFixed(1))};
+      }catch(e){}
+    })();
+    var peP=(async()=>{
+      try{
+        var eurl='https://query1.finance.yahoo.com/v10/finance/quoteSummary/'+tk+'?modules=earnings';
+        var er=await tF(PROXY+encodeURIComponent(eurl),10000);
+        if(!er.ok)return;
+        var ej=await er.json();
+        var q=ej.quoteSummary.result[0].earnings.earningsChart.quarterly;
+        if(!q||!q.length)return;
+        var reported=q.filter(x=>x.actual&&x.actual.raw!=null);
+        if(reported.length<4)return;
+        var actuals=reported.map(x=>x.actual.raw);
+        var last4=actuals.slice(-4);
+        var ttmEPS=last4.reduce((a,b)=>a+b,0);
+        var price=wlPrices[tk];
+        if(!price||ttmEPS<=0)return;
+        var pe=parseFloat((price/ttmEPS).toFixed(1));
+        var entry={pe};
+        if(actuals.length>=8){
+          var prior4=actuals.slice(-8,-4);
+          var priorTTM=prior4.reduce((a,b)=>a+b,0);
+          if(priorTTM>0){
+            var growthPct=(ttmEPS-priorTTM)/priorTTM*100;
+            if(growthPct>0){
+              entry.peg=parseFloat((pe/growthPct).toFixed(2));
+              entry.growth=parseFloat(growthPct.toFixed(1));
+            }
           }
         }
-      }
-      peData[tk]=entry;
-    }catch(e){}
+        peData[tk]=entry;
+      }catch(e){}
+    })();
+    await Promise.all([ivP,peP]);
   }));
+
   if(r)r.innerHTML=WL.map((t,i)=>wCard(t,res[i+1].value,spyData,ivData[t]||null,peData[t]||null)).join('');
   sv('wl-ts','Updated '+ts());
   btnDone(btn,true);
