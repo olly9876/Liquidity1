@@ -1299,27 +1299,28 @@ async function refWL(btn){
       if(!er.ok)return;
       var ej=await er.json();
       var q=ej.quoteSummary.result[0].earnings.earningsChart.quarterly;
-      if(!q||q.length<4)return;
-      var actuals=q.map(x=>x.actual&&x.actual.raw!=null?x.actual.raw:null);
-      // TTM EPS = sum of most recent 4 actual quarters
+      if(!q||!q.length)return;
+      // Filter to only quarters that have actually reported — Yahoo often
+      // includes an upcoming quarter at the end with estimate but no actual yet
+      var reported=q.filter(x=>x.actual&&x.actual.raw!=null);
+      if(reported.length<4)return;
+      var actuals=reported.map(x=>x.actual.raw);
+      // TTM EPS = sum of most recent 4 reported quarters
       var last4=actuals.slice(-4);
-      if(last4.some(v=>v==null))return;
       var ttmEPS=last4.reduce((a,b)=>a+b,0);
       var price=wlPrices[tk];
       if(!price||ttmEPS<=0)return; // P/E undefined for zero/negative earnings
       var pe=parseFloat((price/ttmEPS).toFixed(1));
       var entry={pe};
-      // PEG needs 8 quarters — current TTM vs year-ago TTM for growth rate
+      // PEG needs 8 reported quarters — current TTM vs year-ago TTM for growth rate
       if(actuals.length>=8){
         var prior4=actuals.slice(-8,-4);
-        if(!prior4.some(v=>v==null)){
-          var priorTTM=prior4.reduce((a,b)=>a+b,0);
-          if(priorTTM>0){
-            var growthPct=(ttmEPS-priorTTM)/priorTTM*100;
-            if(growthPct>0){
-              entry.peg=parseFloat((pe/growthPct).toFixed(2));
-              entry.growth=parseFloat(growthPct.toFixed(1));
-            }
+        var priorTTM=prior4.reduce((a,b)=>a+b,0);
+        if(priorTTM>0){
+          var growthPct=(ttmEPS-priorTTM)/priorTTM*100;
+          if(growthPct>0){
+            entry.peg=parseFloat((pe/growthPct).toFixed(2));
+            entry.growth=parseFloat(growthPct.toFixed(1));
           }
         }
       }
