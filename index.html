@@ -216,6 +216,10 @@
   <div id="wl-r"></div>
   <div class="rts" id="wl-ts"></div>
   <button class="rbtn" onclick="refWL(this)">⟳ Refresh Watchlist</button>
+  <div style="margin-top:12px">
+    <div style="font-size:9px;color:var(--mt);margin-bottom:4px;letter-spacing:1px">P/E DEBUG LOG <span style="font-size:8px">(share this if ratios don't show)</span></div>
+    <div id="pe-dbg" style="background:#050810;border:1px solid #1e2d42;border-radius:8px;padding:10px;font-size:9px;color:#5a7080;max-height:220px;overflow-y:auto;line-height:1.7;font-family:monospace">Waiting for refresh…</div>
+  </div>
 </div>
 
 <!-- BREAKOUTS TAB -->
@@ -1269,11 +1273,17 @@ async function refWL(btn){
   btnLoad(btn);
   if(e)e.style.display='none';
   if(r)r.innerHTML='<div style="font-size:10px;color:var(--mt);text-align:center;padding:14px">Loading…</div>';
+
+  var _peLog=[];
+  function pdbg(msg){_peLog.push(msg);var el=$('pe-dbg');if(el)el.innerHTML=_peLog.map(l=>'<div>'+l+'</div>').join('');}
+  pdbg('— refresh started —');
+
   var allSyms=['SPY',...WL];
   var res=await Promise.allSettled(allSyms.map(t=>fC(t,400,true,!!btn)));
   var spyData=res[0].value?res[0].value.map(x=>typeof x==='object'?x.c:x):null;
   var wlPrices={};
   WL.forEach((t,i)=>{var c=res[i+1].value;if(c&&c.length)wlPrices[t]=c[c.length-1].c!=null?c[c.length-1].c:c[c.length-1];});
+  pdbg('Prices loaded: '+WL.map(t=>t+'='+(wlPrices[t]!=null?wlPrices[t].toFixed(2):'MISSING')).join(', '));
 
   // Fetch IV + P/E/PEG together, one concurrent stage per stock (not two sequential ones)
   var ivData={},peData={};
@@ -1293,20 +1303,28 @@ async function refWL(btn){
     })();
     var peP=(async()=>{
       try{
+        pdbg(tk+': fetching earnings…');
         var eurl='https://query1.finance.yahoo.com/v10/finance/quoteSummary/'+tk+'?modules=earnings';
         var er=await tF(PROXY+encodeURIComponent(eurl),10000);
-        if(!er.ok)return;
+        pdbg(tk+': HTTP status '+er.status);
+        if(!er.ok){pdbg(tk+': ❌ non-OK response, stopping');return;}
         var ej=await er.json();
-        var q=ej.quoteSummary.result[0].earnings.earningsChart.quarterly;
-        if(!q||!q.length)return;
+        if(ej.quoteSummary&&ej.quoteSummary.error){pdbg(tk+': ❌ API error: '+JSON.stringify(ej.quoteSummary.error));return;}
+        var q=ej.quoteSummary&&ej.quoteSummary.result&&ej.quoteSummary.result[0]&&ej.quoteSummary.result[0].earnings&&ej.quoteSummary.result[0].earnings.earningsChart&&ej.quoteSummary.result[0].earnings.earningsChart.quarterly;
+        if(!q||!q.length){pdbg(tk+': ❌ no quarterly array found. Raw keys: '+Object.keys(ej.quoteSummary||{}).join(','));return;}
+        pdbg(tk+': found '+q.length+' quarter entries');
         var reported=q.filter(x=>x.actual&&x.actual.raw!=null);
-        if(reported.length<4)return;
+        pdbg(tk+': '+reported.length+' quarters have actual EPS reported');
+        if(reported.length<4){pdbg(tk+': ❌ need 4+ reported quarters, only have '+reported.length);return;}
         var actuals=reported.map(x=>x.actual.raw);
         var last4=actuals.slice(-4);
         var ttmEPS=last4.reduce((a,b)=>a+b,0);
+        pdbg(tk+': TTM EPS = '+ttmEPS.toFixed(2)+' (quarters: '+last4.map(v=>v.toFixed(2)).join(',')+')');
         var price=wlPrices[tk];
-        if(!price||ttmEPS<=0)return;
+        if(!price){pdbg(tk+': ❌ no price available for P/E calc');return;}
+        if(ttmEPS<=0){pdbg(tk+': ❌ negative/zero TTM EPS, P/E undefined');return;}
         var pe=parseFloat((price/ttmEPS).toFixed(1));
+        pdbg(tk+': ✅ P/E = '+pe+' (price '+price.toFixed(2)+' / EPS '+ttmEPS.toFixed(2)+')');
         var entry={pe};
         if(actuals.length>=8){
           var prior4=actuals.slice(-8,-4);
@@ -1316,14 +1334,16 @@ async function refWL(btn){
             if(growthPct>0){
               entry.peg=parseFloat((pe/growthPct).toFixed(2));
               entry.growth=parseFloat(growthPct.toFixed(1));
-            }
+              pdbg(tk+': ✅ PEG = '+entry.peg+' (growth '+entry.growth+'%)');
+            }else{pdbg(tk+': PEG skipped — negative growth ('+growthPct.toFixed(1)+'%)');}
           }
-        }
+        }else{pdbg(tk+': PEG skipped — only '+actuals.length+' reported quarters, need 8');}
         peData[tk]=entry;
-      }catch(e){}
+      }catch(e){pdbg(tk+': ❌ EXCEPTION: '+e.message);}
     })();
     await Promise.all([ivP,peP]);
   }));
+  pdbg('— refresh complete — peData keys: '+Object.keys(peData).join(',')||'(none)');
 
   if(r)r.innerHTML=WL.map((t,i)=>wCard(t,res[i+1].value,spyData,ivData[t]||null,peData[t]||null)).join('');
   sv('wl-ts','Updated '+ts());
