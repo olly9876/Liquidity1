@@ -216,10 +216,6 @@
   <div id="wl-r"></div>
   <div class="rts" id="wl-ts"></div>
   <button class="rbtn" onclick="refWL(this)">⟳ Refresh Watchlist</button>
-  <div style="margin-top:12px">
-    <div style="font-size:9px;color:var(--mt);margin-bottom:4px;letter-spacing:1px">P/E DEBUG LOG <span style="font-size:8px">(share this if ratios don't show)</span></div>
-    <div id="pe-dbg" style="background:#050810;border:1px solid #1e2d42;border-radius:8px;padding:10px;font-size:9px;color:#5a7080;max-height:220px;overflow-y:auto;line-height:1.7;font-family:monospace">Waiting for refresh…</div>
-  </div>
 </div>
 
 <!-- BREAKOUTS TAB -->
@@ -935,39 +931,9 @@ async function loadM7(btn){
     return`<div class="brow"><div class="blbl" style="font-size:10px;width:60px">${s.tk}</div><div class="btrk"><div class="bfil" style="width:${w}%;background:${col}"></div></div><div style="text-align:right;flex-shrink:0;min-width:80px"><span style="font-size:10px;color:${col}">${s.rs>=0?'+':''}${s.rs}% vs SPY</span></div></div>`;
   }).join('');
 
-  // Fetch earnings first, then render cards with full data
-  var earnData={};
-  var earnRes=await Promise.allSettled(M7.map(tk=>{
-    var url='https://query1.finance.yahoo.com/v10/finance/quoteSummary/'+tk+'?modules=earnings';
-    return tF(PROXY+encodeURIComponent(url),10000).then(r=>r.ok?r.json():null).catch(()=>null);
-  }));
-  M7.forEach((tk,i)=>{
-    try{
-      var j=earnRes[i].value;
-      if(!j)return;
-      var q=j.quoteSummary.result[0].earnings.earningsChart.quarterly;
-      if(q&&q.length){
-        var last=q[q.length-1];
-        earnData[tk]={
-          date:last.date,
-          actual:last.actual?last.actual.raw:null,
-          estimate:last.estimate?last.estimate.raw:null
-        };
-      }
-    }catch(e){}
-  });
-
   // Individual cards
   if(el)el.innerHTML=M7.map(tk=>{
     var c=D[tk];
-    var earn=earnData[tk];
-    var earnHtml='';
-    if(earn&&earn.actual!=null&&earn.estimate!=null){
-      var beat=earn.actual>=earn.estimate;
-      var pct=earn.estimate?((earn.actual-earn.estimate)/Math.abs(earn.estimate)*100):0;
-      var ec=beat?'#00e599':'#ff3b5c';
-      earnHtml=`<span style="font-size:9px;padding:2px 8px;border-radius:8px;background:${ec}22;color:${ec}">EPS ${beat?'▲ Beat':'▼ Miss'} ${pct>=0?'+':''}${fmt(pct,1)}% (${earn.date})</span>`;
-    }
     if(!c||c.length<10)return`<div class="card"><div style="font-family:'Bebas Neue',sans-serif;font-size:18px;color:var(--ac)">${tk}</div><div style="font-size:10px;color:var(--warn);margin-top:4px">⚠ Data unavailable</div></div>`;
     var p=c[c.length-1],pv=c[c.length-2]||p;
     var m50=c.slice(-50).reduce((a,b)=>a+b,0)/Math.min(50,c.length);
@@ -1004,7 +970,6 @@ async function loadM7(btn){
       ${pill(a50?'pu':'pd',(a50?'▲':'▼')+' 50MA')}${pill(a200?'pu':'pd',(a200?'▲':'▼')+' 200MA')}
       <span style="font-size:9px;padding:2px 8px;border-radius:8px;background:${rsCol}15;color:${rsCol}">${rs>=0?'▲':'▼'} vs SPY</span>
       <span style="font-size:9px;padding:2px 8px;border-radius:8px;background:${ddCol}15;color:${ddCol}">DD ${fmt(dd,1)}%</span>
-      ${earnHtml}
       ${pH>=-3?'<span class="pill pb">🚀 Near High</span>':''}
     </div></div>`;
   }).join('');
@@ -1274,78 +1239,27 @@ async function refWL(btn){
   if(e)e.style.display='none';
   if(r)r.innerHTML='<div style="font-size:10px;color:var(--mt);text-align:center;padding:14px">Loading…</div>';
 
-  var _peLog=[];
-  function pdbg(msg){_peLog.push(msg);var el=$('pe-dbg');if(el)el.innerHTML=_peLog.map(l=>'<div>'+l+'</div>').join('');}
-  pdbg('— refresh started —');
-
   var allSyms=['SPY',...WL];
   var res=await Promise.allSettled(allSyms.map(t=>fC(t,400,true,!!btn)));
   var spyData=res[0].value?res[0].value.map(x=>typeof x==='object'?x.c:x):null;
-  var wlPrices={};
-  WL.forEach((t,i)=>{var c=res[i+1].value;if(c&&c.length)wlPrices[t]=c[c.length-1].c!=null?c[c.length-1].c:c[c.length-1];});
-  pdbg('Prices loaded: '+WL.map(t=>t+'='+(wlPrices[t]!=null?wlPrices[t].toFixed(2):'MISSING')).join(', '));
 
-  // Fetch IV + P/E/PEG together, one concurrent stage per stock (not two sequential ones)
-  var ivData={},peData={};
+  // Fetch options IV for each watchlist stock (v7/finance/options — not crumb-gated)
+  var ivData={};
   await Promise.allSettled(WL.map(async tk=>{
-    var ivP=(async()=>{
-      try{
-        var url='https://query1.finance.yahoo.com/v7/finance/options/'+tk;
-        var rv=await tF(PROXY+encodeURIComponent(url),10000);
-        if(!rv.ok)return;
-        var j=await rv.json();
-        var chain=j.optionChain.result[0];
-        var calls=chain.options[0]&&chain.options[0].calls||[];
-        var price=chain.quote&&chain.quote.regularMarketPrice||0;
-        var atm=calls.reduce((best,c)=>Math.abs(c.strike-price)<Math.abs((best.strike||999)-price)?c:best,{});
-        if(atm.impliedVolatility)ivData[tk]={iv:parseFloat((atm.impliedVolatility*100).toFixed(1))};
-      }catch(e){}
-    })();
-    var peP=(async()=>{
-      try{
-        pdbg(tk+': fetching earnings…');
-        var eurl='https://query1.finance.yahoo.com/v10/finance/quoteSummary/'+tk+'?modules=earnings';
-        var er=await tF(PROXY+encodeURIComponent(eurl),10000);
-        pdbg(tk+': HTTP status '+er.status);
-        if(!er.ok){pdbg(tk+': ❌ non-OK response, stopping');return;}
-        var ej=await er.json();
-        if(ej.quoteSummary&&ej.quoteSummary.error){pdbg(tk+': ❌ API error: '+JSON.stringify(ej.quoteSummary.error));return;}
-        var q=ej.quoteSummary&&ej.quoteSummary.result&&ej.quoteSummary.result[0]&&ej.quoteSummary.result[0].earnings&&ej.quoteSummary.result[0].earnings.earningsChart&&ej.quoteSummary.result[0].earnings.earningsChart.quarterly;
-        if(!q||!q.length){pdbg(tk+': ❌ no quarterly array found. Raw keys: '+Object.keys(ej.quoteSummary||{}).join(','));return;}
-        pdbg(tk+': found '+q.length+' quarter entries');
-        var reported=q.filter(x=>x.actual&&x.actual.raw!=null);
-        pdbg(tk+': '+reported.length+' quarters have actual EPS reported');
-        if(reported.length<4){pdbg(tk+': ❌ need 4+ reported quarters, only have '+reported.length);return;}
-        var actuals=reported.map(x=>x.actual.raw);
-        var last4=actuals.slice(-4);
-        var ttmEPS=last4.reduce((a,b)=>a+b,0);
-        pdbg(tk+': TTM EPS = '+ttmEPS.toFixed(2)+' (quarters: '+last4.map(v=>v.toFixed(2)).join(',')+')');
-        var price=wlPrices[tk];
-        if(!price){pdbg(tk+': ❌ no price available for P/E calc');return;}
-        if(ttmEPS<=0){pdbg(tk+': ❌ negative/zero TTM EPS, P/E undefined');return;}
-        var pe=parseFloat((price/ttmEPS).toFixed(1));
-        pdbg(tk+': ✅ P/E = '+pe+' (price '+price.toFixed(2)+' / EPS '+ttmEPS.toFixed(2)+')');
-        var entry={pe};
-        if(actuals.length>=8){
-          var prior4=actuals.slice(-8,-4);
-          var priorTTM=prior4.reduce((a,b)=>a+b,0);
-          if(priorTTM>0){
-            var growthPct=(ttmEPS-priorTTM)/priorTTM*100;
-            if(growthPct>0){
-              entry.peg=parseFloat((pe/growthPct).toFixed(2));
-              entry.growth=parseFloat(growthPct.toFixed(1));
-              pdbg(tk+': ✅ PEG = '+entry.peg+' (growth '+entry.growth+'%)');
-            }else{pdbg(tk+': PEG skipped — negative growth ('+growthPct.toFixed(1)+'%)');}
-          }
-        }else{pdbg(tk+': PEG skipped — only '+actuals.length+' reported quarters, need 8');}
-        peData[tk]=entry;
-      }catch(e){pdbg(tk+': ❌ EXCEPTION: '+e.message);}
-    })();
-    await Promise.all([ivP,peP]);
+    try{
+      var url='https://query1.finance.yahoo.com/v7/finance/options/'+tk;
+      var rv=await tF(PROXY+encodeURIComponent(url),10000);
+      if(!rv.ok)return;
+      var j=await rv.json();
+      var chain=j.optionChain.result[0];
+      var calls=chain.options[0]&&chain.options[0].calls||[];
+      var price=chain.quote&&chain.quote.regularMarketPrice||0;
+      var atm=calls.reduce((best,c)=>Math.abs(c.strike-price)<Math.abs((best.strike||999)-price)?c:best,{});
+      if(atm.impliedVolatility)ivData[tk]={iv:parseFloat((atm.impliedVolatility*100).toFixed(1))};
+    }catch(e){}
   }));
-  pdbg('— refresh complete — peData keys: '+Object.keys(peData).join(',')||'(none)');
 
-  if(r)r.innerHTML=WL.map((t,i)=>wCard(t,res[i+1].value,spyData,ivData[t]||null,peData[t]||null)).join('');
+  if(r)r.innerHTML=WL.map((t,i)=>wCard(t,res[i+1].value,spyData,ivData[t]||null)).join('');
   sv('wl-ts','Updated '+ts());
   btnDone(btn,true);
 }
@@ -1580,7 +1494,7 @@ function calcBuySell(closes,vols,spyRaw,tk){
   return{score,verdict,col,stars,reasons:topReasons,regime};
 }
 
-function wCard(tk,raw,spyRaw,ivInfo,peInfo){
+function wCard(tk,raw,spyRaw,ivInfo){
   var c=raw?raw.map(x=>typeof x==='object'?x.c:x):null;
   var vols=raw?raw.map(x=>typeof x==='object'?x.v:null):null;
   if(!c||c.length<10)return`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-family:'Bebas Neue',sans-serif;font-size:18px;color:var(--ac)">${tk}</span><button class="rmv" onclick="rmWL('${tk}')">✕</button></div><div style="font-size:10px;color:var(--warn);margin-top:6px">⚠ No data — check ticker is a valid US stock.</div></div>`;
@@ -1632,19 +1546,7 @@ function wCard(tk,raw,spyRaw,ivInfo,peInfo){
   }
   var ivHtml=ivInfo&&ivInfo.iv?`<span style="font-size:9px;padding:2px 8px;border-radius:8px;background:#a855f722;color:#a855f7">IV ${ivInfo.iv}%</span>`:'';
 
-  // P/E and PEG — calculated from trailing EPS via earnings module (no crumb needed)
-  var peHtml='';
-  if(peInfo&&peInfo.pe!=null){
-    var peCol=peInfo.pe>40?'#ff3b5c':peInfo.pe>25?'#ff9500':peInfo.pe>15?'#ffd93d':'#00e599';
-    peHtml=`<span style="font-size:9px;padding:2px 8px;border-radius:8px;background:${peCol}22;color:${peCol}" title="Price ÷ trailing 12mo EPS">P/E ${peInfo.pe}</span>`;
-    if(peInfo.peg!=null){
-      var pegCol=peInfo.peg>2?'#ff3b5c':peInfo.peg>1?'#ffd93d':'#00e599';
-      peHtml+=`<span style="font-size:9px;padding:2px 8px;border-radius:8px;background:${pegCol}22;color:${pegCol}" title="P/E ÷ EPS growth (${peInfo.growth}% YoY)">PEG ${peInfo.peg}</span>`;
-    }
-  }
-
-
-  return`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div><span style="font-family:'Bebas Neue',sans-serif;font-size:20px;color:var(--ac)">${tk}</span><span style="font-size:9px;padding:2px 7px;border-radius:8px;margin-left:8px;background:${sc}22;color:${sc};border:1px solid ${sc}44">${sig==='bull'?'UPTREND':sig==='bear'?'DOWNTREND':'MIXED'}</span></div><button class="rmv" onclick="rmWL('${tk}')">✕</button></div>${bsHtml}<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:10px"><div><div style="font-family:'Bebas Neue',sans-serif;font-size:32px;line-height:1">$${fmt(p,2)}</div><div style="font-size:11px;color:${chg>=0?'#00e599':'#ff3b5c'};margin-top:2px">${chg>=0?'▲ +':'▼ '}${fmt(Math.abs(chg),2)}%</div></div><div style="text-align:right;font-size:10px;color:var(--mt)"><div>50MA <span style="color:${a50?'#00e599':'#ff3b5c'}">${a50?'▲':'▼'} $${fmt(m50,0)}</span></div><div>200MA <span style="color:${a200?'#00e599':'#ff3b5c'}">${a200?'▲':'▼'} $${fmt(m200,0)}</span></div></div></div><div style="font-size:9px;color:var(--mt);display:flex;justify-content:space-between;margin-bottom:4px"><span>$${fmt(l,0)}</span><span style="color:var(--tx)">${rng}% of range</span><span>$${fmt(h,0)}</span></div><div class="rng"><div class="rnf" style="width:${rng}%"></div><div class="rnt" style="left:${rng}%"></div></div><div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:8px">${pill(a50?'pu':'pd',(a50?'▲':'▼')+' 50MA')}${pill(a200?'pu':'pd',(a200?'▲':'▼')+' 200MA')}${pill(gx?'pp':'pd',gx?'Golden ✦':'Death ✖')}${rsHtml}${volHtml}<span style="font-size:9px;padding:2px 8px;border-radius:8px;background:${ddCol}15;color:${ddCol}">DD ${fmt(dd,1)}%</span>${ivHtml}${peHtml}${pH>-3?'<span class="pill pb">🚀 Near High</span>':''}</div>${renderTechnicals(c)}</div>`;
+  return`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div><span style="font-family:'Bebas Neue',sans-serif;font-size:20px;color:var(--ac)">${tk}</span><span style="font-size:9px;padding:2px 7px;border-radius:8px;margin-left:8px;background:${sc}22;color:${sc};border:1px solid ${sc}44">${sig==='bull'?'UPTREND':sig==='bear'?'DOWNTREND':'MIXED'}</span></div><button class="rmv" onclick="rmWL('${tk}')">✕</button></div>${bsHtml}<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:10px"><div><div style="font-family:'Bebas Neue',sans-serif;font-size:32px;line-height:1">$${fmt(p,2)}</div><div style="font-size:11px;color:${chg>=0?'#00e599':'#ff3b5c'};margin-top:2px">${chg>=0?'▲ +':'▼ '}${fmt(Math.abs(chg),2)}%</div></div><div style="text-align:right;font-size:10px;color:var(--mt)"><div>50MA <span style="color:${a50?'#00e599':'#ff3b5c'}">${a50?'▲':'▼'} $${fmt(m50,0)}</span></div><div>200MA <span style="color:${a200?'#00e599':'#ff3b5c'}">${a200?'▲':'▼'} $${fmt(m200,0)}</span></div></div></div><div style="font-size:9px;color:var(--mt);display:flex;justify-content:space-between;margin-bottom:4px"><span>$${fmt(l,0)}</span><span style="color:var(--tx)">${rng}% of range</span><span>$${fmt(h,0)}</span></div><div class="rng"><div class="rnf" style="width:${rng}%"></div><div class="rnt" style="left:${rng}%"></div></div><div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:8px">${pill(a50?'pu':'pd',(a50?'▲':'▼')+' 50MA')}${pill(a200?'pu':'pd',(a200?'▲':'▼')+' 200MA')}${pill(gx?'pp':'pd',gx?'Golden ✦':'Death ✖')}${rsHtml}${volHtml}<span style="font-size:9px;padding:2px 8px;border-radius:8px;background:${ddCol}15;color:${ddCol}">DD ${fmt(dd,1)}%</span>${ivHtml}${pH>-3?'<span class="pill pb">🚀 Near High</span>':''}</div>${renderTechnicals(c)}</div>`;
 }
 
 // ── BREAKOUT SCANNER (expanded + volume) ─────────────────────────
