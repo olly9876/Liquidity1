@@ -208,7 +208,7 @@
 <!-- FUNDAMENTALS TAB -->
 <div class="tab" id="tab-fund">
   <div class="sec">Fundamentals</div>
-  <div class="note">Sourced from SEC EDGAR filings (10-K/10-Q). US-listed companies only — foreign private issuers (e.g. TSM, ASML) file differently and may not appear. Annual figures, updated when companies file. Not real-time.</div>
+  <div class="note">Sourced from SEC EDGAR filings. Uses trailing-12-month figures built from quarterly (10-Q) filings where available — updates each quarter, not just annually. Falls back to full-year (10-K) figures if a company doesn't cleanly tag quarterly data. US-listed companies only — foreign private issuers (e.g. TSM, ASML) file a 20-F and won't appear. Not real-time.</div>
   <div id="fund-empty" class="note" style="display:none">No watchlist stocks to analyze. Add some on the Watchlist tab first.</div>
   <div id="fund-r"></div>
   <div class="rts" id="fund-ts"></div>
@@ -1242,6 +1242,11 @@ function renderTechnicals(closes){
 // concepts differently, so we try multiple fallback tags per metric.
 // Foreign private issuers (20-F filers like TSM, ASML) usually won't
 // have CIK/XBRL data structured this way and will show "not found".
+//
+// Uses trailing-twelve-month (TTM) figures built from quarterly (10-Q)
+// filings where available — updates every quarter rather than once a
+// year. Falls back to the latest annual (10-K) figure if a company
+// doesn't cleanly tag standalone quarterly duration facts.
 
 var _cikMap=null;
 
@@ -1287,28 +1292,75 @@ async function fetchXBRLConcept(cik,tags){
   return null;
 }
 
-// Most recent annual (10-K, full fiscal year) data point
-function mostRecentAnnual(pts){
-  var annual=pts.filter(d=>d.form==='10-K'&&d.fp==='FY'&&d.val!=null);
-  if(!annual.length)annual=pts.filter(d=>d.val!=null);
-  if(!annual.length)return null;
-  annual.sort((a,b)=>new Date(b.end)-new Date(a.end));
-  return annual[0];
+// ── Duration classification ───────────────────────────────────────
+function durationDays(d){
+  if(!d.start||!d.end)return null;
+  return (new Date(d.end)-new Date(d.start))/86400000;
+}
+function isQuarterly(d){var days=durationDays(d);return days!=null&&days>=80&&days<=100;}
+function isAnnual(d){var days=durationDays(d);return days!=null&&days>=350&&days<=380;}
+
+// Dedupe quarterly points by end-date (restatements can duplicate),
+// keep the most recently FILED version of each period, sort newest first
+function uniqueQuarters(pts){
+  var byEnd={};
+  pts.filter(d=>isQuarterly(d)&&d.val!=null).forEach(d=>{
+    if(!byEnd[d.end]||new Date(d.filed)>new Date(byEnd[d.end].filed))byEnd[d.end]=d;
+  });
+  return Object.values(byEnd).sort((a,b)=>new Date(b.end)-new Date(a.end));
 }
 
-// Annual data point from ~1 year before a reference point (for YoY growth)
-function priorYearAnnual(pts,ref){
-  if(!ref)return null;
-  var annual=pts.filter(d=>d.form==='10-K'&&d.fp==='FY'&&d.val!=null&&d.end!==ref.end);
+// TTM = sum of 4 most recent non-overlapping quarters (flow metrics only)
+function ttmFromQuarters(pts){
+  var q=uniqueQuarters(pts);
+  if(q.length<4)return null;
+  var last4=q.slice(0,4);
+  return{val:last4.reduce((s,d)=>s+d.val,0),asOf:last4[0].end,basis:'TTM'};
+}
+
+// YoY growth: current TTM (quarters 0-3) vs prior TTM (quarters 4-7)
+function ttmGrowth(pts){
+  var q=uniqueQuarters(pts);
+  if(q.length<8)return null;
+  var cur=q.slice(0,4).reduce((s,d)=>s+d.val,0);
+  var prior=q.slice(4,8).reduce((s,d)=>s+d.val,0);
+  if(prior===0)return null;
+  return(cur-prior)/Math.abs(prior)*100;
+}
+
+// Fallback: most recent full fiscal year (10-K) — used when a company
+// doesn't cleanly tag standalone quarterly duration facts
+function mostRecentAnnual(pts){
+  var annual=pts.filter(d=>isAnnual(d)&&d.form==='10-K'&&d.val!=null);
   if(!annual.length)return null;
-  var target=new Date(ref.end);target.setFullYear(target.getFullYear()-1);
-  var best=null,minDiff=Infinity;
-  annual.forEach(d=>{
-    var diff=Math.abs(new Date(d.end)-target);
-    if(diff<minDiff){minDiff=diff;best=d;}
-  });
-  // Only accept if reasonably close to 1 year away (within ~2 months)
-  return minDiff<60*86400000?best:null;
+  annual.sort((a,b)=>new Date(b.end)-new Date(a.end));
+  return{val:annual[0].val,asOf:annual[0].end,basis:'FY'};
+}
+function annualGrowth(pts){
+  var annual=pts.filter(d=>isAnnual(d)&&d.form==='10-K'&&d.val!=null);
+  if(annual.length<2)return null;
+  annual.sort((a,b)=>new Date(b.end)-new Date(a.end));
+  var cur=annual[0].val,prior=annual[1].val;
+  if(prior===0)return null;
+  return(cur-prior)/Math.abs(prior)*100;
+}
+
+// Try TTM first (most current), fall back to annual
+function flowMetric(pts){
+  return ttmFromQuarters(pts)||mostRecentAnnual(pts);
+}
+function flowGrowth(pts,usedTTM){
+  return usedTTM?ttmGrowth(pts):annualGrowth(pts);
+}
+
+// Point-in-time (balance sheet) items — most recent value from ANY
+// filing type, not restricted to 10-K, since a fresh 10-Q balance
+// sheet is just as valid and more current than a stale 10-K one
+function mostRecentPoint(pts){
+  var valid=pts.filter(d=>d.val!=null&&d.end);
+  if(!valid.length)return null;
+  valid.sort((a,b)=>new Date(b.end)-new Date(a.end));
+  return{val:valid[0].val,asOf:valid[0].end,form:valid[0].form};
 }
 
 async function fetchFundamentals(tk){
@@ -1330,28 +1382,30 @@ async function fetchFundamentals(tk){
   var out={ticker:tk,cik:cik};
 
   if(rev){
-    var rNow=mostRecentAnnual(rev.data);
-    if(rNow){
-      out.revenue=rNow.val;out.revenueEnd=rNow.end;out.revenueForm=rNow.form;
-      var rPrior=priorYearAnnual(rev.data,rNow);
-      if(rPrior)out.revenueGrowth=(rNow.val-rPrior.val)/Math.abs(rPrior.val)*100;
+    var rTTM=ttmFromQuarters(rev.data);
+    var rMetric=rTTM||mostRecentAnnual(rev.data);
+    if(rMetric){
+      out.revenue=rMetric.val;out.revenueEnd=rMetric.asOf;out.revenueBasis=rMetric.basis;
+      out.revenueGrowth=flowGrowth(rev.data,!!rTTM);
     }
   }
   if(ni){
-    var nNow=mostRecentAnnual(ni.data);
-    if(nNow)out.netIncome=nNow.val;
+    var nTTM=ttmFromQuarters(ni.data);
+    var nMetric=nTTM||mostRecentAnnual(ni.data);
+    if(nMetric){out.netIncome=nMetric.val;out.netIncomeBasis=nMetric.basis;}
   }
   if(eq){
-    var eNow=mostRecentAnnual(eq.data);
-    if(eNow)out.equity=eNow.val;
+    var eqPt=mostRecentPoint(eq.data);
+    if(eqPt)out.equity=eqPt.val;
   }
   if(liab){
-    var lNow=mostRecentAnnual(liab.data);
-    if(lNow)out.liabilities=lNow.val;
+    var liabPt=mostRecentPoint(liab.data);
+    if(liabPt)out.liabilities=liabPt.val;
   }
   if(eps){
-    var epsNow=mostRecentAnnual(eps.data);
-    if(epsNow)out.epsDiluted=epsNow.val;
+    var epsTTM=ttmFromQuarters(eps.data);
+    var epsMetric=epsTTM||mostRecentAnnual(eps.data);
+    if(epsMetric)out.epsDiluted=epsMetric.val;
   }
 
   if(out.netIncome!=null&&out.revenue)out.netMargin=out.netIncome/out.revenue*100;
@@ -1380,12 +1434,18 @@ function fundCard(f){
     </div><div style="font-size:10px;color:var(--warn);margin-top:6px">⚠ ${f.error}</div></div>`;
   }
   var rows=[];
-  if(f.revenue!=null)rows.push(['Revenue (TTM/FY)','$'+fmtBig(f.revenue),f.revenueEnd?'as of '+f.revenueEnd+' · '+f.revenueForm:'']);
+  if(f.revenue!=null){
+    var basisLbl=f.revenueBasis==='TTM'?'trailing 12mo':'FY (annual)';
+    rows.push(['Revenue','$'+fmtBig(f.revenue),basisLbl+' · as of '+f.revenueEnd]);
+  }
   if(f.revenueGrowth!=null){
     var gc=f.revenueGrowth>=0?'#00e599':'#ff3b5c';
     rows.push(['Revenue Growth YoY','<span style="color:'+gc+'">'+(f.revenueGrowth>=0?'+':'')+f.revenueGrowth.toFixed(1)+'%</span>','']);
   }
-  if(f.netIncome!=null)rows.push(['Net Income','$'+fmtBig(f.netIncome),'']);
+  if(f.netIncome!=null){
+    var niBasisLbl=f.netIncomeBasis==='TTM'?'trailing 12mo':'FY (annual)';
+    rows.push(['Net Income','$'+fmtBig(f.netIncome),niBasisLbl]);
+  }
   if(f.netMargin!=null){
     var mc=f.netMargin>=20?'#00e599':f.netMargin>=10?'#ffd93d':f.netMargin>=0?'#ff9500':'#ff3b5c';
     rows.push(['Net Margin','<span style="color:'+mc+'">'+f.netMargin.toFixed(1)+'%</span>','']);
