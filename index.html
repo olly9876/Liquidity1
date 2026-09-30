@@ -1249,22 +1249,32 @@ function renderTechnicals(closes){
 // doesn't cleanly tag standalone quarterly duration facts.
 
 var _cikMap=null;
+var _xbrlMem={}; // in-memory only — raw XBRL responses are far too large for localStorage
 
+// One-time cleanup of entries an earlier version cached in localStorage
+try{Object.keys(localStorage).filter(function(k){return k.indexOf('liq_c_'+CACHE_VER+'xbrl_')===0||k==='liq_c_'+CACHE_VER+'sec_cik_map_v1';}).forEach(function(k){localStorage.removeItem(k);});}catch(e){}
+
+// Ticker → CIK map. Own storage with a 7-day TTL (it rarely changes).
 async function loadCIKMap(){
   if(_cikMap)return _cikMap;
-  var cached=cGet('sec_cik_map_v1');
-  if(cached){_cikMap=cached;return _cikMap;}
+  try{
+    var raw=localStorage.getItem('liq_cikmap');
+    if(raw){
+      var o=JSON.parse(raw);
+      if(o&&o.map&&Date.now()-o.at<7*86400000){_cikMap=o.map;return _cikMap;}
+    }
+  }catch(e){}
   try{
     var url='https://www.sec.gov/files/company_tickers.json';
-    var r=await tF(PROXY+encodeURIComponent(url),15000);
+    var r=await tF(PROXY+encodeURIComponent(url),20000);
     if(!r.ok)return null;
     var j=await r.json();
     var map={};
-    Object.values(j).forEach(entry=>{
+    Object.values(j).forEach(function(entry){
       if(entry.ticker)map[entry.ticker.toUpperCase()]=String(entry.cik_str).padStart(10,'0');
     });
     _cikMap=map;
-    cSet('sec_cik_map_v1',map);
+    try{localStorage.setItem('liq_cikmap',JSON.stringify({at:Date.now(),map:map}));}catch(e){}
     return map;
   }catch(e){return null;}
 }
@@ -1273,16 +1283,14 @@ async function loadCIKMap(){
 async function fetchXBRLConcept(cik,tags){
   for(var i=0;i<tags.length;i++){
     try{
-      var url='https://data.sec.gov/api/xbrl/companyconcept/CIK'+cik+'/us-gaap/'+tags[i]+'.json';
-      var ck='xbrl_'+cik+'_'+tags[i];
-      var cached=cGet(ck);
-      var j;
-      if(cached){j=cached;}
-      else{
+      var ck=cik+'_'+tags[i];
+      var j=_xbrlMem[ck];
+      if(!j){
+        var url='https://data.sec.gov/api/xbrl/companyconcept/CIK'+cik+'/us-gaap/'+tags[i]+'.json';
         var r=await tF(PROXY+encodeURIComponent(url),12000);
         if(!r.ok)continue;
         j=await r.json();
-        cSet(ck,j);
+        _xbrlMem[ck]=j;
       }
       var units=j.units||{};
       var pts=units.USD||units['USD/shares']||units.shares||null;
@@ -1508,18 +1516,147 @@ async function loadFundamentals(btn){
   btnDone(btn,true);
 }
 
+// ── EARNINGS DATE ESTIMATION (SEC EDGAR 8-K Item 2.02) ────────────
+// Companies file an 8-K tagged Item 2.02 on the day they release
+// earnings. We read each company's own release history and project the
+// next date from its pattern — so nothing is hardcoded and nothing goes
+// stale. It's an ESTIMATE (companies confirm dates only weeks ahead).
+// Foreign filers (TSM, ASML…) use 6-K, which has no such tag: no signal.
+
+var EARN_DAY=86400000;
+
+function lEarnEst(){try{return JSON.parse(localStorage.getItem('liq_earn_est')||'{}');}catch(e){return{};}}
+function sEarnEst(o){try{localStorage.setItem('liq_earn_est',JSON.stringify(o));}catch(e){}}
+
+// All earnings-release dates (YYYY-MM-DD) from a CIK's submissions feed
+async function fetchEarningsDates(cik){
+  var url='https://data.sec.gov/submissions/CIK'+cik+'.json';
+  var r=await tF(PROXY+encodeURIComponent(url),15000);
+  if(!r.ok)return{err:'http_'+r.status};
+  var j=await r.json();
+  var rec=j&&j.filings&&j.filings.recent;
+  if(!rec||!rec.form||!rec.filingDate||!rec.items)return{err:'shape'};
+  var out=[];
+  for(var i=0;i<rec.form.length;i++){
+    if(rec.form[i]!=='8-K')continue;
+    var items=String(rec.items[i]||'').split(',').map(function(s){return s.trim();});
+    if(items.indexOf('2.02')>=0)out.push(rec.filingDate[i]);
+  }
+  return{dates:out};
+}
+
+// Project the next release date from past ones
+function estimateNextEarnings(dates){
+  var ds=dates.map(function(d){return Date.parse(d+'T00:00:00Z');})
+              .filter(function(t){return !isNaN(t);})
+              .sort(function(a,b){return b-a;}); // newest first
+  // Collapse clusters (amended/duplicate 8-Ks within 30 days) to the earliest
+  var rel=[];
+  ds.forEach(function(t){
+    var last=rel[rel.length-1];
+    if(last!==undefined&&(last-t)/EARN_DAY<30)rel[rel.length-1]=t;
+    else rel.push(t);
+  });
+  if(rel.length<3)return null;
+  var latest=rel[0];
+
+  // Method A: median gap between recent releases
+  var gaps=[];
+  for(var i=0;i<Math.min(4,rel.length-1);i++){
+    var g=(rel[i]-rel[i+1])/EARN_DAY;
+    if(g>=60&&g<=130)gaps.push(g);
+  }
+  if(!gaps.length)return null;
+  gaps.sort(function(a,b){return a-b;});
+  var est=latest+gaps[Math.floor(gaps.length/2)]*EARN_DAY;
+
+  // Method B (preferred): same quarter last year + 52 weeks. Captures
+  // seasonality, e.g. year-end quarters that report later than the rest.
+  if(rel.length>=4){
+    var span=(latest-rel[3])/EARN_DAY; // 3 quarters ≈ 273 days
+    if(span>=240&&span<=310)est=rel[3]+364*EARN_DAY;
+  }
+  return{
+    est:new Date(est).toISOString().slice(0,10),
+    last:new Date(latest).toISOString().slice(0,10),
+    n:rel.length
+  };
+}
+
+// Days until estimated release, computed fresh from the stored DATE each
+// time. Returns null if no estimate, or if the estimate has already passed
+// (stale until recomputed — never apply a penalty from an outdated guess).
+function getEarningsDaysUntil(tk){
+  var rec=lEarnEst()[tk];
+  if(!rec||!rec.est)return null;
+  var days=Math.ceil((Date.parse(rec.est+'T00:00:00Z')-Date.now())/EARN_DAY);
+  if(days<-1)return null;
+  return{days:Math.max(days,0),est:rec.est,last:rec.last};
+}
+
+var _earnBusy=false,_earnAgain=false;
+
+// Background top-up: only fetches for tickers with no estimate or a stale
+// one, so in steady state this does nothing at all.
+async function ensureEarningsEstimates(){
+  if(_earnBusy){_earnAgain=true;return;}
+  _earnBusy=true;
+  try{
+    var all=lEarnEst(),now=Date.now();
+    var todo=WL.filter(function(tk){
+      var r=all[tk];
+      if(!r)return true;
+      if(r.fail)return now-r.at>14*EARN_DAY;                 // retry failures every 2 weeks
+      if(now-r.at>75*EARN_DAY)return true;                   // periodic refresh
+      var estMs=Date.parse(r.est+'T00:00:00Z');
+      return now>estMs+3*EARN_DAY&&now-r.at>2*EARN_DAY;      // estimate passed → look for the new release
+    });
+    if(!todo.length)return;
+
+    var cikMap=await loadCIKMap();
+    if(!cikMap)return; // SEC unreachable (e.g. Worker not updated) — retry next session
+
+    var gotNew=false;
+    for(var i=0;i<todo.length;i++){
+      var tk=todo[i],cik=cikMap[tk],rec;
+      if(!cik){
+        rec={fail:true,why:'no_cik',at:Date.now()};
+      }else{
+        var res;
+        try{res=await fetchEarningsDates(cik);}catch(e){res={err:'net'};}
+        if(res.err){ // transient (rate limit, timeout, unexpected shape) — don't record, retry next session
+          if(i<todo.length-1)await new Promise(function(r){setTimeout(r,400);});
+          continue;
+        }
+        var est=estimateNextEarnings(res.dates);
+        rec=est?{est:est.est,last:est.last,n:est.n,at:Date.now()}:{fail:true,why:'no_history',at:Date.now()};
+        if(est)gotNew=true;
+      }
+      var cur=lEarnEst();cur[tk]=rec;sEarnEst(cur);
+      if(i<todo.length-1)await new Promise(function(r){setTimeout(r,400);}); // stay well inside SEC's 10 req/sec limit
+    }
+    if(gotNew)refWL(null,true); // re-render cards quietly so new estimates show
+  }catch(e){
+  }finally{
+    _earnBusy=false;
+    if(_earnAgain){_earnAgain=false;setTimeout(ensureEarningsEstimates,500);}
+  }
+}
+
 // ── WATCHLIST ─────────────────────────────────────────────────────
 var WL=[];
 function lWL(){try{WL=JSON.parse(localStorage.getItem('liq_wl')||'[]')}catch(e){WL=[]}}
 function sWL(){try{localStorage.setItem('liq_wl',JSON.stringify(WL))}catch(e){}}
-function addWL(){var inp=$('wi');if(!inp)return;var v=inp.value.trim().toUpperCase().replace(/[^A-Z0-9.\-]/g,'');if(!v||WL.indexOf(v)>=0||WL.length>=20)return;WL.push(v);sWL();inp.value='';refWL()}
+function addWL(){var inp=$('wi');if(!inp)return;var v=inp.value.trim().toUpperCase().replace(/[^A-Z0-9.\-]/g,'');if(!v||WL.indexOf(v)>=0||WL.length>=20)return;WL.push(v);sWL();inp.value='';refWL();setTimeout(ensureEarningsEstimates,1500)}
 function rmWL(t){WL=WL.filter(x=>x!==t);sWL();refWL()}
-async function refWL(btn){
+var _wlSeq=0;
+async function refWL(btn,quiet){
   var e=$('wl-e'),r=$('wl-r');
+  var mySeq=++_wlSeq; // if a newer refresh starts, this one won't overwrite it
   if(!WL.length){if(e)e.style.display='block';if(r)r.innerHTML='';return}
   btnLoad(btn);
   if(e)e.style.display='none';
-  if(r)r.innerHTML='<div style="font-size:10px;color:var(--mt);text-align:center;padding:14px">Loading…</div>';
+  if(r&&!quiet)r.innerHTML='<div style="font-size:10px;color:var(--mt);text-align:center;padding:14px">Loading…</div>';
 
   var allSyms=['SPY',...WL];
   var res=await Promise.allSettled(allSyms.map(t=>fC(t,400,true,!!btn)));
@@ -1541,6 +1678,7 @@ async function refWL(btn){
     }catch(e){}
   }));
 
+  if(mySeq!==_wlSeq){btnDone(btn,false);return;}
   if(r)r.innerHTML=WL.map((t,i)=>wCard(t,res[i+1].value,spyData,ivData[t]||null)).join('');
   sv('wl-ts','Updated '+ts());
   btnDone(btn,true);
@@ -1754,6 +1892,21 @@ function calcBuySell(closes,vols,spyRaw,tk){
   if(regime==='bear'){score-=8;reasons.push({t:'🐻 Bear market regime',bull:false});}
   else if(regime==='bull'){score+=5;reasons.push({t:'🐂 Bull market regime',bull:true});}
 
+  // ── 12. Earnings proximity (estimated from SEC 8-K Item 2.02 history) ──
+  // Earnings are a binary event technicals can't predict, so pull the score
+  // toward neutral as the estimated release approaches. Windows are wide
+  // and multipliers gentle because the date is an estimate, not confirmed.
+  var earnNear=getEarningsDaysUntil(tk);
+  if(earnNear){
+    if(earnNear.days<=7){
+      score=50+(score-50)*0.45;
+      reasons.unshift({t:'⚠ Earnings ~'+(earnNear.days===0?'today':'in '+earnNear.days+'d')+' (est.) — signal muted',bull:false});
+    }else if(earnNear.days<=21){
+      score=50+(score-50)*0.75;
+      reasons.unshift({t:'Earnings ~'+earnNear.days+'d (est.) — reduced conviction',bull:false});
+    }
+  }
+
   // ── Final ────────────────────────────────────────────────────────
   // Guard against any NaN that slipped through
   if(isNaN(score)||!isFinite(score))score=50;
@@ -1828,7 +1981,15 @@ function wCard(tk,raw,spyRaw,ivInfo){
   }
   var ivHtml=ivInfo&&ivInfo.iv?`<span style="font-size:9px;padding:2px 8px;border-radius:8px;background:#a855f722;color:#a855f7">IV ${ivInfo.iv}%</span>`:'';
 
-  return`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div><span style="font-family:'Bebas Neue',sans-serif;font-size:20px;color:var(--ac)">${tk}</span><span style="font-size:9px;padding:2px 7px;border-radius:8px;margin-left:8px;background:${sc}22;color:${sc};border:1px solid ${sc}44">${sig==='bull'?'UPTREND':sig==='bear'?'DOWNTREND':'MIXED'}</span></div><button class="rmv" onclick="rmWL('${tk}')">✕</button></div>${bsHtml}<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:10px"><div><div style="font-family:'Bebas Neue',sans-serif;font-size:32px;line-height:1">$${fmt(p,2)}</div><div style="font-size:11px;color:${chg>=0?'#00e599':'#ff3b5c'};margin-top:2px">${chg>=0?'▲ +':'▼ '}${fmt(Math.abs(chg),2)}%</div></div><div style="text-align:right;font-size:10px;color:var(--mt)"><div>50MA <span style="color:${a50?'#00e599':'#ff3b5c'}">${a50?'▲':'▼'} $${fmt(m50,0)}</span></div><div>200MA <span style="color:${a200?'#00e599':'#ff3b5c'}">${a200?'▲':'▼'} $${fmt(m200,0)}</span></div></div></div><div style="font-size:9px;color:var(--mt);display:flex;justify-content:space-between;margin-bottom:4px"><span>$${fmt(l,0)}</span><span style="color:var(--tx)">${rng}% of range</span><span>$${fmt(h,0)}</span></div><div class="rng"><div class="rnf" style="width:${rng}%"></div><div class="rnt" style="left:${rng}%"></div></div><div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:8px">${pill(a50?'pu':'pd',(a50?'▲':'▼')+' 50MA')}${pill(a200?'pu':'pd',(a200?'▲':'▼')+' 200MA')}${pill(gx?'pp':'pd',gx?'Golden ✦':'Death ✖')}${rsHtml}${volHtml}<span style="font-size:9px;padding:2px 8px;border-radius:8px;background:${ddCol}15;color:${ddCol}">DD ${fmt(dd,1)}%</span>${ivHtml}${pH>-3?'<span class="pill pb">🚀 Near High</span>':''}</div>${renderTechnicals(c)}</div>`;
+  // Estimated next earnings release (from SEC 8-K history — see earnings module)
+  var earnBadge='';
+  var earnInfo=getEarningsDaysUntil(tk);
+  if(earnInfo){
+    var eCol=earnInfo.days<=7?'#ff6b35':earnInfo.days<=21?'#ffd93d':'#5a7080';
+    earnBadge=`<span style="font-size:9px;padding:2px 8px;border-radius:8px;background:${eCol}22;color:${eCol}" title="Estimated from past earnings-release filings. Last release: ${earnInfo.last}. Estimate: ${earnInfo.est}">📅 Earnings ~${earnInfo.days===0?'today':earnInfo.days+'d'} (est.)</span>`;
+  }
+
+  return`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div><span style="font-family:'Bebas Neue',sans-serif;font-size:20px;color:var(--ac)">${tk}</span><span style="font-size:9px;padding:2px 7px;border-radius:8px;margin-left:8px;background:${sc}22;color:${sc};border:1px solid ${sc}44">${sig==='bull'?'UPTREND':sig==='bear'?'DOWNTREND':'MIXED'}</span></div><button class="rmv" onclick="rmWL('${tk}')">✕</button></div>${bsHtml}<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:10px"><div><div style="font-family:'Bebas Neue',sans-serif;font-size:32px;line-height:1">$${fmt(p,2)}</div><div style="font-size:11px;color:${chg>=0?'#00e599':'#ff3b5c'};margin-top:2px">${chg>=0?'▲ +':'▼ '}${fmt(Math.abs(chg),2)}%</div></div><div style="text-align:right;font-size:10px;color:var(--mt)"><div>50MA <span style="color:${a50?'#00e599':'#ff3b5c'}">${a50?'▲':'▼'} $${fmt(m50,0)}</span></div><div>200MA <span style="color:${a200?'#00e599':'#ff3b5c'}">${a200?'▲':'▼'} $${fmt(m200,0)}</span></div></div></div><div style="font-size:9px;color:var(--mt);display:flex;justify-content:space-between;margin-bottom:4px"><span>$${fmt(l,0)}</span><span style="color:var(--tx)">${rng}% of range</span><span>$${fmt(h,0)}</span></div><div class="rng"><div class="rnf" style="width:${rng}%"></div><div class="rnt" style="left:${rng}%"></div></div><div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:8px">${pill(a50?'pu':'pd',(a50?'▲':'▼')+' 50MA')}${pill(a200?'pu':'pd',(a200?'▲':'▼')+' 200MA')}${pill(gx?'pp':'pd',gx?'Golden ✦':'Death ✖')}${rsHtml}${volHtml}<span style="font-size:9px;padding:2px 8px;border-radius:8px;background:${ddCol}15;color:${ddCol}">DD ${fmt(dd,1)}%</span>${ivHtml}${earnBadge}${pH>-3?'<span class="pill pb">🚀 Near High</span>':''}</div>${renderTechnicals(c)}</div>`;
 }
 
 // ── BREAKOUT SCANNER (expanded + volume) ─────────────────────────
@@ -2094,6 +2255,8 @@ renderCal();
 window._gsrS='neut';window._gbpS='neut';window._csS='neut';window._moveS='neut';window._pcS='neut';window._yS='neut';window._vS='neut';window._mS='neut';
 compFG();
 loadCommod();loadSpreads();loadVix();loadMacro();loadM7();loadRS();runScan();
+// Earnings-date estimates from SEC: deferred so they never compete with the first data load
+setTimeout(ensureEarningsEstimates,8000);
 
 // Refresh intervals
 setInterval(loadVix,60000);
