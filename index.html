@@ -1680,6 +1680,7 @@ async function refWL(btn,quiet){
 
   if(mySeq!==_wlSeq){btnDone(btn,false);return;}
   if(r)r.innerHTML=WL.map((t,i)=>wCard(t,res[i+1].value,spyData,ivData[t]||null)).join('');
+  fillBacktests(mySeq,WL.map(function(t,i){return{tk:t,raw:res[i+1].value};}),spyData);
   sv('wl-ts','Updated '+ts());
   btnDone(btn,true);
 }
@@ -1753,7 +1754,11 @@ function toWeekly(closes){
 }
 
 // ── IMPROVED BUY / SELL SCORER (12 signals) ───────────────────────
-function calcBuySell(closes,vols,spyRaw,tk){
+function calcBuySell(closes,vols,spyRaw,tk,opts){
+  // opts.replay: used by the backtest. Skips the two inputs that depend on
+  // live state (today's market regime, SEC earnings estimates), which can't
+  // be reconstructed for a past date. Live callers pass no opts.
+  var replay=!!(opts&&opts.replay);
   if(!closes||closes.length<30)return null;
   var score=50,reasons=[];
   var p=closes[closes.length-1];
@@ -1762,7 +1767,7 @@ function calcBuySell(closes,vols,spyRaw,tk){
   var spyM200=spyRaw&&spyRaw.length>=200?spyRaw.slice(-200).reduce((a,b)=>a+b,0)/200:null;
   var spyAbove200=spyM200?spyRaw[spyRaw.length-1]>spyM200:null;
   var stockAbove200=m200?p>m200:null;
-  var regime=detectRegime();
+  var regime=replay?'neutral':detectRegime();
 
   // ── Trend filter multiplier ──────────────────────────────────────
   // Reduces weight of bullish signals in downtrending markets
@@ -1896,7 +1901,7 @@ function calcBuySell(closes,vols,spyRaw,tk){
   // Earnings are a binary event technicals can't predict, so pull the score
   // toward neutral as the estimated release approaches. Windows are wide
   // and multipliers gentle because the date is an estimate, not confirmed.
-  var earnNear=getEarningsDaysUntil(tk);
+  var earnNear=replay?null:getEarningsDaysUntil(tk);
   if(earnNear){
     if(earnNear.days<=7){
       score=50+(score-50)*0.45;
@@ -1927,6 +1932,152 @@ function calcBuySell(closes,vols,spyRaw,tk){
 
   var topReasons=reasons.sort((a,b)=>0).slice(0,3); // keep insertion order (most impactful first)
   return{score,verdict,col,stars,reasons:topReasons,regime};
+}
+
+// ── SIGNAL BACKTEST ───────────────────────────────────────────────
+// Replays the buy/sell score on each past day of a stock's loaded history
+// using only data available up to that day, then looks at what the stock
+// did over the NEXT BT_H trading days. Results are compared with an
+// average day for the same stock, so a stock that simply went up doesn't
+// make every signal look good.
+//
+// Honest limits: ~2 years of history is only ~24 independent months, so
+// "can't tell" is the expected answer far more often than a verdict.
+// Excludes the market-regime and earnings adjustments (live-only inputs).
+
+var BT_H=20;            // forward horizon, trading days (~1 month)
+var BT_START=200;       // first replayed bar (scorer wants a 200-day average)
+var BT_MIN_DAYS=60;     // minimum tested days before reporting anything
+var BT_MIN_GROUP=40;    // minimum days a side needs before it can be judged
+var BT_ALPHA=0.01;      // strict on purpose: ~20 verdicts get shown at once, so
+                        // a looser bar would put a lucky "green" on some stock
+var BT_VER=2;           // bump to invalidate in-memory results
+var _btCache={};
+
+function btMean(a){return a.reduce(function(s,v){return s+v;},0)/a.length;}
+function btGroupStats(v){
+  if(!v.length)return{n:0};
+  return{n:v.length,mean:btMean(v),up:v.filter(function(x){return x>0;}).length/v.length*100};
+}
+
+// Did this side of the signal beat random timing?
+// Timing-shuffle test: slide the real score history against the real returns
+// by every possible offset. Each offset keeps the signal's stickiness and the
+// overlap between 20-day windows intact, but destroys any genuine link between
+// the score and what happened next. p = how often shuffled timing did at least
+// as well (in either direction) as the real timing.
+function btJudge(scores,fwd,sign){
+  var n=scores.length;
+  var inGroup=sign>0?function(s){return s>=58;}:function(s){return s<42;};
+  var base=btMean(fwd);
+  function edgeAt(shift){
+    var sum=0,c=0;
+    for(var j=0;j<n;j++){if(inGroup(scores[(j+shift)%n])){sum+=fwd[j];c++;}}
+    return c?sum/c-base:0;
+  }
+  var cnt=0;for(var i=0;i<n;i++){if(inGroup(scores[i]))cnt++;}
+  if(cnt<BT_MIN_GROUP)return{kind:'few',n:cnt};
+  var obs=edgeAt(0),skill=sign*obs;
+  var hits=0,tot=0;
+  for(var s=BT_H;s<=n-BT_H;s++){tot++;if(Math.abs(edgeAt(s))>=Math.abs(obs))hits++;}
+  var p=(hits+1)/(tot+1);
+  return{kind:p<BT_ALPHA?(skill>0?'good':'bad'):'incon',skill:skill,p:p,n:cnt};
+}
+
+// scores[i] = score on day i; fwd[i] = % return over the next BT_H days
+function btAnalyze(scores,fwd){
+  var n=scores.length;
+  if(n<BT_MIN_DAYS)return{err:'history'};
+  var buy=[],neu=[],sell=[];
+  for(var i=0;i<n;i++){(scores[i]>=58?buy:scores[i]<42?sell:neu).push(fwd[i]);}
+  var base={n:n,mean:btMean(fwd),up:fwd.filter(function(x){return x>0;}).length/n*100};
+  return{n:n,base:base,buy:btGroupStats(buy),neu:btGroupStats(neu),sell:btGroupStats(sell),
+         buyJ:btJudge(scores,fwd,1),sellJ:btJudge(scores,fwd,-1)};
+}
+
+// Score every past day using only data up to that day; pair with the later return
+function btScores(closes,vols,spy){
+  var n=closes.length;
+  var so=spy.length-n; // line the two series up by their final bar
+  var scores=[],fwd=[];
+  for(var t=BT_START;t<=n-1-BT_H;t++){
+    var se=t+so;
+    if(se<59)continue;
+    var r=calcBuySell(closes.slice(0,t+1),vols?vols.slice(0,t+1):null,spy.slice(0,se+1),null,{replay:true});
+    if(!r||isNaN(r.score))continue;
+    scores.push(r.score);
+    fwd.push((closes[t+BT_H]/closes[t]-1)*100);
+  }
+  return{scores:scores,fwd:fwd};
+}
+
+function backtestSignal(closes,vols,spy){
+  var n=closes.length;
+  if(!spy||spy.length<60)return{err:'spy'};
+  if(n<BT_START+BT_H+BT_MIN_DAYS)return{err:'history'};
+  var s=btScores(closes,vols,spy);
+  return btAnalyze(s.scores,s.fwd);
+}
+
+function getBacktest(tk,raw,spy){
+  var closes=raw.map(function(x){return typeof x==='object'?x.c:x;});
+  var vols=raw.map(function(x){return typeof x==='object'?(x.v||0):0;});
+  var key=tk+'|'+closes.length+'|'+closes[closes.length-1]+'|'+(spy?spy.length:0)+'|'+BT_VER;
+  var hit=_btCache[tk];
+  if(hit&&hit.key===key)return hit.res;
+  var res=backtestSignal(closes,vols,spy);
+  _btCache[tk]={key:key,res:res};
+  return res;
+}
+
+function btPct(v){return(v>=0?'+':'')+v.toFixed(1)+'%';}
+
+function btRender(r){
+  var note='font-size:9px;color:var(--mt);margin-bottom:8px;line-height:1.5';
+  if(!r)return'';
+  if(r.err==='spy')return'<div style="'+note+'">📊 Backtest: needs SPY data, unavailable right now</div>';
+  if(r.err)return'<div style="'+note+'">📊 Backtest: not enough price history yet (needs about 1.2 years)</div>';
+
+  var WORDS={
+    buy:{few:['⚪','too few signals'],incon:['⚪','inconclusive'],good:['🟢','beat average (unusual vs luck)'],bad:['🔴','lagged average (unusual vs luck)']},
+    sell:{few:['⚪','too few signals'],incon:['⚪','inconclusive'],good:['🟢','preceded weakness (unusual vs luck)'],bad:['🔴','preceded gains (unusual vs luck)']}
+  };
+  var bw=WORDS.buy[r.buyJ.kind],sw=WORDS.sell[r.sellJ.kind];
+  var head='📊 Backtest · BUY '+bw[0]+' '+bw[1]+' · SELL '+sw[0]+' '+sw[1];
+
+  function luck(j){
+    if(!j||j.p==null)return'';
+    var pct=j.p<0.01?'under 1%':j.p>0.99?'over 99%':Math.round(j.p*100)+'%';
+    return' · random timing matched this '+pct+' of the time';
+  }
+  function row(name,g,sign,j){
+    if(!g.n)return'<div style="margin-top:7px"><div style="font-size:10px;color:var(--tx)">'+name+'</div><div style="font-size:9px;color:var(--mt)">no days in this range</div></div>';
+    var edge=g.mean-r.base.mean;
+    var ec=sign===0?'var(--mt)':(sign*edge>0?'#00e599':'#ff3b5c');
+    return'<div style="margin-top:7px"><div style="font-size:10px;color:var(--tx)">'+name+' · '+g.n+' days</div>'+
+      '<div style="font-size:9px;color:var(--mt)">avg '+btPct(g.mean)+' next '+BT_H+'d · up '+Math.round(g.up)+'% · vs all days <span style="color:'+ec+'">'+btPct(edge)+'</span>'+luck(j)+'</div></div>';
+  }
+
+  return'<details style="margin-bottom:10px;background:var(--s2);border-radius:8px;padding:8px 10px">'+
+    '<summary style="font-size:10px;color:var(--tx);cursor:pointer">'+head+'</summary>'+
+    row('BUY-side (score 58+)',r.buy,1,r.buyJ)+
+    row('NEUTRAL (42–57)',r.neu,0,null)+
+    row('SELL-side (score under 42)',r.sell,-1,r.sellJ)+
+    '<div style="margin-top:8px;font-size:9px;color:var(--mt)">All '+r.n+' tested days: avg '+btPct(r.base.mean)+' · up '+Math.round(r.base.up)+'%</div>'+
+    '<div style="margin-top:6px;font-size:8px;color:var(--mt);line-height:1.5">Replays this score on this stock’s past ~2 years using only data available on each day. Close to close, no costs; excludes the market-regime and earnings adjustments. “Random timing” slides the score history against the returns: a flag needs random timing to match under 1% of the time.<br><br><b>Read this as context, not proof.</b> In my simulations, even a genuine edge of about +2% a month went undetected roughly 9 times in 10 with this much history, and a false flag appeared by pure luck on roughly 1 stock in 20. So “inconclusive” is the normal result and does not mean the signal is useless, and a lone green or red is weak evidence either way.</div>'+
+    '</details>';
+}
+
+// Runs after the cards render; yields between stocks so the page stays responsive
+async function fillBacktests(seq,items,spy){
+  for(var i=0;i<items.length;i++){
+    await new Promise(function(r){setTimeout(r,0);});
+    if(seq!==_wlSeq)return; // a newer refresh replaced these cards
+    var el=$('bt-'+items[i].tk);
+    if(!el||!items[i].raw)continue;
+    try{el.innerHTML=btRender(getBacktest(items[i].tk,items[i].raw,spy));}
+    catch(e){el.innerHTML='';}
+  }
 }
 
 function wCard(tk,raw,spyRaw,ivInfo){
@@ -1979,6 +2130,8 @@ function wCard(tk,raw,spyRaw,ivInfo){
     var vRat=avgV>0?recentV/avgV:0;
     if(vRat>0)volHtml=`<span class="${vRat>1.5?'vol-badge vol-high':'vol-badge vol-norm'}">${vRat>1.5?'🔥':''} Vol ${fmt(vRat,1)}×</span>`;
   }
+  // Backtest summary is filled in asynchronously after the cards render
+  var btHtml=bs?'<div id="bt-'+tk+'" style="font-size:9px;color:var(--mt);margin-bottom:8px">📊 Backtesting…</div>':'';
   var ivHtml=ivInfo&&ivInfo.iv?`<span style="font-size:9px;padding:2px 8px;border-radius:8px;background:#a855f722;color:#a855f7">IV ${ivInfo.iv}%</span>`:'';
 
   // Estimated next earnings release (from SEC 8-K history — see earnings module)
@@ -1989,7 +2142,7 @@ function wCard(tk,raw,spyRaw,ivInfo){
     earnBadge=`<span style="font-size:9px;padding:2px 8px;border-radius:8px;background:${eCol}22;color:${eCol}" title="Estimated from past earnings-release filings. Last release: ${earnInfo.last}. Estimate: ${earnInfo.est}">📅 Earnings ~${earnInfo.days===0?'today':earnInfo.days+'d'} (est.)</span>`;
   }
 
-  return`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div><span style="font-family:'Bebas Neue',sans-serif;font-size:20px;color:var(--ac)">${tk}</span><span style="font-size:9px;padding:2px 7px;border-radius:8px;margin-left:8px;background:${sc}22;color:${sc};border:1px solid ${sc}44">${sig==='bull'?'UPTREND':sig==='bear'?'DOWNTREND':'MIXED'}</span></div><button class="rmv" onclick="rmWL('${tk}')">✕</button></div>${bsHtml}<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:10px"><div><div style="font-family:'Bebas Neue',sans-serif;font-size:32px;line-height:1">$${fmt(p,2)}</div><div style="font-size:11px;color:${chg>=0?'#00e599':'#ff3b5c'};margin-top:2px">${chg>=0?'▲ +':'▼ '}${fmt(Math.abs(chg),2)}%</div></div><div style="text-align:right;font-size:10px;color:var(--mt)"><div>50MA <span style="color:${a50?'#00e599':'#ff3b5c'}">${a50?'▲':'▼'} $${fmt(m50,0)}</span></div><div>200MA <span style="color:${a200?'#00e599':'#ff3b5c'}">${a200?'▲':'▼'} $${fmt(m200,0)}</span></div></div></div><div style="font-size:9px;color:var(--mt);display:flex;justify-content:space-between;margin-bottom:4px"><span>$${fmt(l,0)}</span><span style="color:var(--tx)">${rng}% of range</span><span>$${fmt(h,0)}</span></div><div class="rng"><div class="rnf" style="width:${rng}%"></div><div class="rnt" style="left:${rng}%"></div></div><div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:8px">${pill(a50?'pu':'pd',(a50?'▲':'▼')+' 50MA')}${pill(a200?'pu':'pd',(a200?'▲':'▼')+' 200MA')}${pill(gx?'pp':'pd',gx?'Golden ✦':'Death ✖')}${rsHtml}${volHtml}<span style="font-size:9px;padding:2px 8px;border-radius:8px;background:${ddCol}15;color:${ddCol}">DD ${fmt(dd,1)}%</span>${ivHtml}${earnBadge}${pH>-3?'<span class="pill pb">🚀 Near High</span>':''}</div>${renderTechnicals(c)}</div>`;
+  return`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div><span style="font-family:'Bebas Neue',sans-serif;font-size:20px;color:var(--ac)">${tk}</span><span style="font-size:9px;padding:2px 7px;border-radius:8px;margin-left:8px;background:${sc}22;color:${sc};border:1px solid ${sc}44">${sig==='bull'?'UPTREND':sig==='bear'?'DOWNTREND':'MIXED'}</span></div><button class="rmv" onclick="rmWL('${tk}')">✕</button></div>${bsHtml}${btHtml}<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:10px"><div><div style="font-family:'Bebas Neue',sans-serif;font-size:32px;line-height:1">$${fmt(p,2)}</div><div style="font-size:11px;color:${chg>=0?'#00e599':'#ff3b5c'};margin-top:2px">${chg>=0?'▲ +':'▼ '}${fmt(Math.abs(chg),2)}%</div></div><div style="text-align:right;font-size:10px;color:var(--mt)"><div>50MA <span style="color:${a50?'#00e599':'#ff3b5c'}">${a50?'▲':'▼'} $${fmt(m50,0)}</span></div><div>200MA <span style="color:${a200?'#00e599':'#ff3b5c'}">${a200?'▲':'▼'} $${fmt(m200,0)}</span></div></div></div><div style="font-size:9px;color:var(--mt);display:flex;justify-content:space-between;margin-bottom:4px"><span>$${fmt(l,0)}</span><span style="color:var(--tx)">${rng}% of range</span><span>$${fmt(h,0)}</span></div><div class="rng"><div class="rnf" style="width:${rng}%"></div><div class="rnt" style="left:${rng}%"></div></div><div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:8px">${pill(a50?'pu':'pd',(a50?'▲':'▼')+' 50MA')}${pill(a200?'pu':'pd',(a200?'▲':'▼')+' 200MA')}${pill(gx?'pp':'pd',gx?'Golden ✦':'Death ✖')}${rsHtml}${volHtml}<span style="font-size:9px;padding:2px 8px;border-radius:8px;background:${ddCol}15;color:${ddCol}">DD ${fmt(dd,1)}%</span>${ivHtml}${earnBadge}${pH>-3?'<span class="pill pb">🚀 Near High</span>':''}</div>${renderTechnicals(c)}</div>`;
 }
 
 // ── BREAKOUT SCANNER (expanded + volume) ─────────────────────────
