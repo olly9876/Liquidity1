@@ -419,7 +419,41 @@ function cGet(key){
   }catch(e){return null;}
 }
 function cSet(key,data){
-  try{localStorage.setItem('liq_c_'+CACHE_VER+key,JSON.stringify({ts:Date.now(),data}));}catch(e){}
+  var k='liq_c_'+CACHE_VER+key,v=JSON.stringify({ts:Date.now(),data:data});
+  try{localStorage.setItem(k,v);}
+  catch(e){ // storage full: drop entries that can never be reused, then try once more
+    try{cPrune();localStorage.setItem(k,v);}catch(e2){}
+  }
+}
+// Delete cache entries that can never be used again: other app versions',
+// expired, and unreadable ones. Entries are otherwise only removed when the
+// same key is read after expiry, so without this they pile up forever.
+// Rate-limited because it can run from inside cSet while storage is full.
+var _lastPrune=0;
+function cPrune(){
+  var now=Date.now();
+  if(now-_lastPrune<60000)return;
+  _lastPrune=now;
+  try{
+    var cur='liq_c_'+CACHE_VER;
+    Object.keys(localStorage).forEach(function(k){
+      if(k.indexOf('liq_c_')!==0)return;
+      var drop=k.indexOf(cur)!==0;
+      if(!drop){
+        var m=/^\x7B"ts":(\d+)/.exec(localStorage.getItem(k)||'');
+        drop=!m||now-(+m[1])>CACHE_TTL;
+      }
+      if(drop)localStorage.removeItem(k);
+    });
+  }catch(e){}
+}
+// Save YOUR data (watchlist, score history, earnings estimates). Cached prices can
+// always be re-fetched, so if storage is full they are sacrificed first.
+function lsSave(key,val){
+  try{localStorage.setItem(key,val);return true;}
+  catch(e){
+    try{cClear();localStorage.setItem(key,val);return true;}catch(e2){return false;}
+  }
 }
 function cClear(){
   try{Object.keys(localStorage).filter(k=>k.startsWith('liq_c_')).forEach(k=>localStorage.removeItem(k));}catch(e){}
@@ -1526,7 +1560,7 @@ async function loadFundamentals(btn){
 var EARN_DAY=86400000;
 
 function lEarnEst(){try{return JSON.parse(localStorage.getItem('liq_earn_est')||'{}');}catch(e){return{};}}
-function sEarnEst(o){try{localStorage.setItem('liq_earn_est',JSON.stringify(o));}catch(e){}}
+function sEarnEst(o){lsSave('liq_earn_est',JSON.stringify(o));}
 
 // All earnings-release dates (YYYY-MM-DD) from a CIK's submissions feed
 async function fetchEarningsDates(cik){
@@ -1646,7 +1680,7 @@ async function ensureEarningsEstimates(){
 // ── WATCHLIST ─────────────────────────────────────────────────────
 var WL=[];
 function lWL(){try{WL=JSON.parse(localStorage.getItem('liq_wl')||'[]')}catch(e){WL=[]}}
-function sWL(){try{localStorage.setItem('liq_wl',JSON.stringify(WL))}catch(e){}}
+function sWL(){lsSave('liq_wl',JSON.stringify(WL));}
 function addWL(){var inp=$('wi');if(!inp)return;var v=inp.value.trim().toUpperCase().replace(/[^A-Z0-9.\-]/g,'');if(!v||WL.indexOf(v)>=0||WL.length>=20)return;WL.push(v);sWL();inp.value='';refWL();setTimeout(ensureEarningsEstimates,1500)}
 function rmWL(t){WL=WL.filter(x=>x!==t);sWL();refWL()}
 var _wlSeq=0;
@@ -1995,20 +2029,37 @@ function btAnalyze(scores,fwd){
          buyJ:btJudge(scores,fwd,1),sellJ:btJudge(scores,fwd,-1)};
 }
 
-// Score every past day using only data up to that day; pair with the later return
-function btScores(closes,vols,spy){
-  var n=closes.length;
-  var so=spy.length-n; // line the two series up by their final bar
-  var scores=[],fwd=[];
+// Score every past day using only data up to that day; pair each with the
+// return over the following BT_H days. A generator so the 5-year run can yield
+// to the UI; the sync wrapper just runs it straight through.
+// seArr (optional): for each stock bar, the index of its matching SPY bar,
+// aligned by DATE. Without it, bars are lined up by their final bar, which is
+// fine for the 2-year data (it carries no dates).
+function* btScoreGen(closes,vols,spy,seArr){
+  var n=closes.length,so=spy.length-n,scores=[],fwd=[];
+  var total=Math.max(1,n-BT_H-BT_START);
   for(var t=BT_START;t<=n-1-BT_H;t++){
-    var se=t+so;
-    if(se<59)continue;
-    var r=calcBuySell(closes.slice(0,t+1),vols?vols.slice(0,t+1):null,spy.slice(0,se+1),null,{replay:true});
-    if(!r||isNaN(r.score))continue;
-    scores.push(r.score);
-    fwd.push((closes[t+BT_H]/closes[t]-1)*100);
+    var se=seArr?seArr[t]:t+so;
+    if(se>=59){
+      var r=calcBuySell(closes.slice(0,t+1),vols?vols.slice(0,t+1):null,spy.slice(0,se+1),null,{replay:true});
+      if(r&&!isNaN(r.score)){scores.push(r.score);fwd.push((closes[t+BT_H]/closes[t]-1)*100);}
+    }
+    if((t-BT_START)%40===39)yield(t-BT_START+1)/total;
   }
   return{scores:scores,fwd:fwd};
+}
+function btScores(closes,vols,spy,seArr){
+  var g=btScoreGen(closes,vols,spy,seArr),s;
+  while(!(s=g.next()).done){}
+  return s.value;
+}
+async function btScoresAsync(closes,vols,spy,seArr,onProgress){
+  var g=btScoreGen(closes,vols,spy,seArr),s;
+  while(!(s=g.next()).done){
+    if(onProgress)onProgress(s.value);
+    await new Promise(function(r){setTimeout(r,0);});
+  }
+  return s.value;
 }
 
 function backtestSignal(closes,vols,spy){
@@ -2032,40 +2083,165 @@ function getBacktest(tk,raw,spy){
 
 function btPct(v){return(v>=0?'+':'')+v.toFixed(1)+'%';}
 
-function btRender(r){
+// ── 5-YEAR VERSION (on demand) ────────────────────────────────────
+// Prices are held in memory only, never in localStorage: ~1,250 bars per
+// stock would eat the browser's ~5 MB quota and could silently stop the
+// watchlist from saving.
+var _longMem={};   // symbol -> {at, p}  (p = promise of {c,v,d} or null)
+var LONG_TTL=4*3600000;
+var _btLong={};    // ticker -> finished 5-year result
+var _btLongBusy={};
+
+function pYHLong(json){
+  try{
+    var r=json.chart.result[0];
+    var ts=r.timestamp||[],q=r.indicators.quote[0];
+    var cl=q.close,vo=q.volume||[];
+    var c=[],v=[],d=[];
+    for(var i=0;i<cl.length;i++){
+      if(cl[i]!=null&&!isNaN(cl[i])&&cl[i]>0){
+        c.push(cl[i]);v.push(vo[i]||0);
+        d.push(ts[i]?new Date(ts[i]*1000).toISOString().slice(0,10):null);
+      }
+    }
+    return c.length>=2?{c:c,v:v,d:d}:null;
+  }catch(e){return null;}
+}
+
+// Shared by every ticker (SPY is fetched once); failures are not remembered
+function fCLong(sym){
+  var hit=_longMem[sym];
+  if(hit&&Date.now()-hit.at<LONG_TTL)return hit.p;
+  var p=(async function(){
+    var base='https://query1.finance.yahoo.com/v8/finance/chart/'+encodeURIComponent(toYH(sym))+'?interval=1d&range=5y&includePrePost=false';
+    var urls=[PROXY+encodeURIComponent(base),PROXY+encodeURIComponent(base.replace('query1','query2'))];
+    for(var i=0;i<urls.length;i++){
+      try{
+        var r=await tF(urls[i],25000);
+        if(!r.ok)continue;
+        var out=pYHLong(await r.json());
+        if(out&&out.c.length>=60)return out;
+      }catch(e){}
+    }
+    return null;
+  })();
+  _longMem[sym]={at:Date.now(),p:p};
+  p.then(function(v){if(!v&&_longMem[sym]&&_longMem[sym].p===p)delete _longMem[sym];});
+  return p;
+}
+
+// For each stock bar: index of the latest SPY bar dated on or before it (-1 if none)
+function btAlignSpy(sd,pd){
+  var out=new Array(sd.length),j=-1;
+  for(var i=0;i<sd.length;i++){
+    while(j+1<pd.length&&pd[j+1]<=sd[i])j++;
+    out[i]=j;
+  }
+  return out;
+}
+function btMonth(d){
+  if(!d)return'';
+  var M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return M[+d.slice(5,7)-1]+' '+d.slice(0,4);
+}
+
+async function runLongBacktest(tk,btn){
+  if(_btLongBusy[tk])return;
+  _btLongBusy[tk]=true;
+  function say(h){var el=$('bt5-'+tk);if(el)el.innerHTML='<div style="font-size:9px;color:var(--mt);margin-top:8px">'+h+'</div>';}
+  function release(){delete _btLongBusy[tk];if(btn){btn.disabled=false;btn.style.opacity='';}}
+  if(btn){btn.disabled=true;btn.style.opacity='0.6';}
+  say('Loading about 5 years of prices…');
+  try{
+    var got=await Promise.all([fCLong(tk),fCLong('SPY')]);
+    var s=got[0],m=got[1];
+    if(!s||!m){
+      say('Couldn’t load 5-year prices for '+(!s?tk:'SPY')+'. Try again in a moment.');
+      release();return;
+    }
+    var n=s.c.length,out={bars:n};
+    if(n<BT_START+BT_H+BT_MIN_DAYS){
+      out.res={err:'history'};
+    }else{
+      var dated=s.d.every(Boolean)&&m.d.every(Boolean);
+      var sc=await btScoresAsync(s.c,s.v,m.c,dated?btAlignSpy(s.d,m.d):null,function(p){
+        say('Replaying the signal day by day… '+Math.round(p*100)+'%');
+      });
+      out.res=btAnalyze(sc.scores,sc.fwd);
+      out.from=s.d[BT_START];out.to=s.d[n-1-BT_H];
+    }
+    _btLong[tk]=out;
+    delete _btLongBusy[tk];
+    var box=$('bt-'+tk);
+    if(box)box.innerHTML=btRender(_btCache[tk]?_btCache[tk].res:null,tk,true);
+  }catch(e){
+    say('Something went wrong running the 5-year test. Try again.');
+    release();
+  }
+}
+
+// r2: the automatic ~2-year result; tk: ticker (to find any 5-year result); open: keep panel expanded
+function btRender(r2,tk,open){
+  var L=tk&&_btLong[tk]?_btLong[tk]:null;
   var note='font-size:9px;color:var(--mt);margin-bottom:8px;line-height:1.5';
-  if(!r)return'';
-  if(r.err==='spy')return'<div style="'+note+'">📊 Backtest: needs SPY data, unavailable right now</div>';
-  if(r.err)return'<div style="'+note+'">📊 Backtest: not enough price history yet (needs about 1.2 years)</div>';
+  var usable2=r2&&!r2.err,usable5=L&&L.res&&!L.res.err;
+  if(!r2&&!L)return'';
+
+  if(!usable2&&!usable5){
+    var e=(L&&L.res&&L.res.err)||(r2&&r2.err);
+    if(e==='spy')return'<div style="'+note+'">📊 Backtest: needs SPY data, unavailable right now</div>';
+    return'<div style="'+note+'">📊 Backtest: not enough price history yet (needs about 1.2 years)'+
+      (L?' — only about '+Math.round(L.bars/21)+' months of prices exist for this stock':'')+'</div>';
+  }
 
   var WORDS={
     buy:{few:['⚪','too few signals'],incon:['⚪','inconclusive'],good:['🟢','beat average (unusual vs luck)'],bad:['🔴','lagged average (unusual vs luck)']},
     sell:{few:['⚪','too few signals'],incon:['⚪','inconclusive'],good:['🟢','preceded weakness (unusual vs luck)'],bad:['🔴','preceded gains (unusual vs luck)']}
   };
-  var bw=WORDS.buy[r.buyJ.kind],sw=WORDS.sell[r.sellJ.kind];
-  var head='📊 Backtest · BUY '+bw[0]+' '+bw[1]+' · SELL '+sw[0]+' '+sw[1];
+  var prim=usable5?L.res:r2;
+  var bw=WORDS.buy[prim.buyJ.kind],sw=WORDS.sell[prim.sellJ.kind];
+  var head='📊 Backtest ('+(usable5?'5y':'2y')+') · BUY '+bw[0]+' '+bw[1]+' · SELL '+sw[0]+' '+sw[1];
 
   function luck(j){
     if(!j||j.p==null)return'';
     var pct=j.p<0.01?'under 1%':j.p>0.99?'over 99%':Math.round(j.p*100)+'%';
     return' · random timing matched this '+pct+' of the time';
   }
-  function row(name,g,sign,j){
-    if(!g.n)return'<div style="margin-top:7px"><div style="font-size:10px;color:var(--tx)">'+name+'</div><div style="font-size:9px;color:var(--mt)">no days in this range</div></div>';
-    var edge=g.mean-r.base.mean;
-    var ec=sign===0?'var(--mt)':(sign*edge>0?'#00e599':'#ff3b5c');
-    return'<div style="margin-top:7px"><div style="font-size:10px;color:var(--tx)">'+name+' · '+g.n+' days</div>'+
-      '<div style="font-size:9px;color:var(--mt)">avg '+btPct(g.mean)+' next '+BT_H+'d · up '+Math.round(g.up)+'% · vs all days <span style="color:'+ec+'">'+btPct(edge)+'</span>'+luck(j)+'</div></div>';
+  function section(title,sub,r){
+    function row(name,g,sign,j){
+      if(!g.n)return'<div style="margin-top:7px"><div style="font-size:10px;color:var(--tx)">'+name+'</div><div style="font-size:9px;color:var(--mt)">no days in this range</div></div>';
+      var edge=g.mean-r.base.mean;
+      var ec=sign===0?'var(--mt)':(sign*edge>0?'#00e599':'#ff3b5c');
+      return'<div style="margin-top:7px"><div style="font-size:10px;color:var(--tx)">'+name+' · '+g.n+' days</div>'+
+        '<div style="font-size:9px;color:var(--mt)">avg '+btPct(g.mean)+' next '+BT_H+'d · up '+Math.round(g.up)+'% · vs all days <span style="color:'+ec+'">'+btPct(edge)+'</span>'+luck(j)+'</div></div>';
+    }
+    return'<div style="margin-top:10px;font-size:9px;letter-spacing:1px;color:var(--ac)">'+title+'</div>'+
+      (sub?'<div style="font-size:8px;color:var(--mt)">'+sub+'</div>':'')+
+      row('BUY-side (score 58+)',r.buy,1,r.buyJ)+
+      row('NEUTRAL (42–57)',r.neu,0,null)+
+      row('SELL-side (score under 42)',r.sell,-1,r.sellJ)+
+      '<div style="margin-top:6px;font-size:9px;color:var(--mt)">All '+r.n+' tested days: avg '+btPct(r.base.mean)+' · up '+Math.round(r.base.up)+'%</div>';
   }
 
-  return'<details style="margin-bottom:10px;background:var(--s2);border-radius:8px;padding:8px 10px">'+
-    '<summary style="font-size:10px;color:var(--tx);cursor:pointer">'+head+'</summary>'+
-    row('BUY-side (score 58+)',r.buy,1,r.buyJ)+
-    row('NEUTRAL (42–57)',r.neu,0,null)+
-    row('SELL-side (score under 42)',r.sell,-1,r.sellJ)+
-    '<div style="margin-top:8px;font-size:9px;color:var(--mt)">All '+r.n+' tested days: avg '+btPct(r.base.mean)+' · up '+Math.round(r.base.up)+'%</div>'+
-    '<div style="margin-top:6px;font-size:8px;color:var(--mt);line-height:1.5">Replays this score on this stock’s past ~2 years using only data available on each day. Close to close, no costs; excludes the market-regime and earnings adjustments. “Random timing” slides the score history against the returns: a flag needs random timing to match under 1% of the time.<br><br><b>Read this as context, not proof.</b> In my simulations, even a genuine edge of about +2% a month went undetected roughly 9 times in 10 with this much history, and a false flag appeared by pure luck on roughly 1 stock in 20. So “inconclusive” is the normal result and does not mean the signal is useless, and a lone green or red is weak evidence either way.</div>'+
-    '</details>';
+  var body='';
+  if(usable5){
+    var sub=L.from&&L.to?'tested '+btMonth(L.from)+' – '+btMonth(L.to)+' (the first ~10 months of prices are warm-up)':'about '+(L.bars/252).toFixed(1)+' years of prices';
+    if(L.bars<1150)sub+=' · only about '+Math.round(L.bars/21)+' months of prices exist for this stock';
+    body+=section('5-YEAR REPLAY',sub,L.res);
+  }
+  if(usable2)body+=section('2-YEAR REPLAY',usable5?'':'',r2);
+
+  // Offer the 5-year run unless it can't help (stock too new) or already done
+  var tooNew=r2&&r2.err==='history';
+  if(!L&&tk&&!tooNew){
+    body+='<button class="rbtn" style="margin-top:12px;padding:8px;font-size:10px" onclick="runLongBacktest(\''+tk+'\',this)">Run 5-year version</button>'+
+          '<div id="bt5-'+tk+'"></div>';
+  }
+
+  var foot='<div style="margin-top:10px;font-size:8px;color:var(--mt);line-height:1.5">Replays this score day by day using only data available on each day. Close to close, no costs; excludes the market-regime and earnings adjustments. “Random timing” slides the score history against the returns: a flag needs random timing to match under 1% of the time.<br><br><b>Read this as context, not proof.</b> In my simulations a genuine edge of about +2% a month was caught about 1 time in 15 with 2 years of history and about 1 in 5 with 5 years (about 1 in 2 at +4% a month); smaller edges were almost never caught. A false flag appeared by pure luck on roughly 1 stock in 20. So “inconclusive” is the normal result and does not mean the signal is useless, and a lone green or red is weak evidence either way.</div>';
+
+  return'<details'+(open?' open':'')+' style="margin-bottom:10px;background:var(--s2);border-radius:8px;padding:8px 10px">'+
+    '<summary style="font-size:10px;color:var(--tx);cursor:pointer">'+head+'</summary>'+body+foot+'</details>';
 }
 
 // Runs after the cards render; yields between stocks so the page stays responsive
@@ -2075,7 +2251,7 @@ async function fillBacktests(seq,items,spy){
     if(seq!==_wlSeq)return; // a newer refresh replaced these cards
     var el=$('bt-'+items[i].tk);
     if(!el||!items[i].raw)continue;
-    try{el.innerHTML=btRender(getBacktest(items[i].tk,items[i].raw,spy));}
+    try{el.innerHTML=btRender(getBacktest(items[i].tk,items[i].raw,spy),items[i].tk);}
     catch(e){el.innerHTML='';}
   }
 }
@@ -2246,7 +2422,7 @@ function lFGHist(){
   try{return JSON.parse(localStorage.getItem('liq_fg_hist')||'[]');}catch(e){return[];}
 }
 function sFGHist(hist){
-  try{localStorage.setItem('liq_fg_hist',JSON.stringify(hist.slice(-30)));}catch(e){}
+  lsSave('liq_fg_hist',JSON.stringify(hist.slice(-30)));
 }
 function recordFGScore(score){
   var today=new Date().toISOString().slice(0,10);
@@ -2395,6 +2571,7 @@ function compFG(){
 }
 
 // ── INIT ─────────────────────────────────────────────────────────
+cPrune(); // clear unusable cache entries before anything new is written
 lWL();refWL();
 fetchNews();
 rYC(MR.y2,MR.y10);rMom(null,null);rDXY(null);rGBP(null);rSecs(null);
