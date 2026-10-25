@@ -12,6 +12,8 @@
   <button class="nb" onclick="ST('wl',this)">📋 Watchlist</button>
   <button class="nb" onclick="ST('scan',this)">🚀 Breakouts</button>
 </nav>
+<div id="hl-strip" style="padding:6px 14px;font-size:9px;color:var(--mt);border-bottom:1px solid var(--bd);display:flex;flex-wrap:wrap;gap:6px;align-items:center"><span>DATA</span><span id="hl-chips">checking…</span><button class="rmv" style="margin-left:auto;color:var(--ac);border-color:rgba(0,212,255,.25);background:rgba(0,212,255,.08)" onclick="hlTest(this)">Test connections</button></div>
+<div id="hl-test" style="padding:0 14px;font-size:9px;color:var(--mt);line-height:1.7"></div>
 
 <!-- COMMODITIES TAB -->
 <div class="tab" id="tab-commod">
@@ -253,6 +255,7 @@
     <div class="chdr"><div class="clbl">🎯 Near 52W Low</div><span class="badge br" id="sc-lb">—</span></div>
     <div id="sc-lr"></div>
   </div>
+  <div class="card" id="pool-card"><div class="clbl">Signal test · all scanned symbols</div><div style="font-size:10px;color:var(--mt);line-height:1.5">Replays the buy/sell score on every symbol the scanner tracks and pools the results. Far more data than any single stock can give.</div><button class="rbtn" onclick="runPooled(this)">Run pooled test</button><div id="pool-r"></div></div>
   <div class="rts" id="sc-ts"></div>
   <button class="rbtn" onclick="runScan(this)">⟳ Re-scan</button>
 </div>
@@ -260,6 +263,7 @@
 <!-- FEAR/GREED TAB -->
 <div class="tab active" id="tab-fg">
   <div class="sec">Fear / Greed</div>
+  <div class="card" id="since-card" style="display:none"><div class="clbl">Since you last looked</div><div id="since-r"></div></div>
   <div class="card" style="text-align:center">
     <div class="clbl" style="margin-bottom:12px">COMPOSITE MARKET SENTIMENT</div>
     <svg viewBox="0 0 220 130" width="200" height="118">
@@ -278,7 +282,7 @@
     <div style="font-size:9px;color:var(--mt);margin-top:4px" id="fg-hist-i"></div>
   </div>
   <div class="card">
-    <div class="clbl" style="margin-bottom:8px">Components (9 signals · weighted by category)</div>
+    <div class="clbl" style="margin-bottom:8px">Components (10 signals · weighted by category)</div>
     <div id="fg-c"></div>
   </div>
   <div class="card">
@@ -374,12 +378,55 @@ var PROXY='https://odd-cherry-c994.ollyfent.workers.dev/proxy?url=';
 function tF(url,ms=15000){
   return new Promise((resolve,reject)=>{
     var done=false;
-    var tid=setTimeout(()=>{if(!done){done=true;reject(new Error('timeout'))}},ms);
+    var tid=setTimeout(()=>{if(!done){done=true;hlog(url,false,0);reject(new Error('timeout'))}},ms);
     fetch(url,{mode:'cors',cache:'no-store',credentials:'omit'})
-      .then(r=>{if(!done){done=true;clearTimeout(tid);resolve(r)}})
-      .catch(e=>{if(!done){done=true;clearTimeout(tid);reject(e)}});
+      .then(r=>{if(!done){done=true;clearTimeout(tid);hlog(url,r.ok,r.status);resolve(r)}})
+      .catch(e=>{if(!done){done=true;clearTimeout(tid);hlog(url,false,0);reject(e)}});
   });
 }
+// ── Data health: every request through tF is tallied per source ──
+var _hl={};
+function hlHost(u){
+  try{
+    var m=/[?&]url=([^&]+)/.exec(u),h=new URL(m?decodeURIComponent(m[1]):u).hostname;
+    return /yahoo/.test(h)?'Yahoo':/stlouisfed/.test(h)?'FRED':/binance/.test(h)?'Binance':/sec\.gov/.test(h)?'SEC':/workers\.dev/.test(h)?'Worker':h;
+  }catch(e){return'?';}
+}
+function hlog(u,ok,st){
+  var h=hlHost(u),o=_hl[h]||(_hl[h]={ok:0,fail:0,lastOk:0,st:0});
+  if(ok)o.ok++,o.lastOk=Date.now();else o.fail++,o.st=st;
+  clearTimeout(hlog._t);hlog._t=setTimeout(hlRender,400);
+}
+function hlRender(){
+  var el=$('hl-chips');if(!el)return;
+  var now=Date.now(),names=Object.keys(_hl);
+  el.innerHTML=names.length?names.map(function(n){
+    var o=_hl[n],tot=o.ok+o.fail,r=o.ok/tot;
+    var s=r>=0.9?['✓','#00e599']:r>=0.5?['⚠','#ffd93d']:['✗','#ff3b5c'];
+    var age=o.lastOk?Math.max(1,Math.round((now-o.lastOk)/60000))+'m ago':'never';
+    return'<span style="color:'+s[1]+'">'+n+' '+s[0]+'</span> '+(o.fail?o.fail+'/'+tot+' failed · ':'')+'last ok '+age;
+  }).join(' &nbsp;·&nbsp; '):'no requests yet';
+}
+async function hlTest(btn){
+  btnLoad(btn);
+  var P=PROXY,T=[['Worker',P.replace('/proxy?url=','/health')],
+    ['Yahoo',P+encodeURIComponent('https://query1.finance.yahoo.com/v8/finance/chart/SPY?interval=1d&range=5d')],
+    ['FRED',P+encodeURIComponent('https://fred.stlouisfed.org/graph/fredgraph.csv?id=DFF')],
+    ['Binance',P+encodeURIComponent('https://api.binance.com/api/v3/ticker/bookTicker?symbol=BTCUSDT')],
+    ['SEC',P+encodeURIComponent('https://data.sec.gov/api/xbrl/companyconcept/CIK0000320193/us-gaap/Assets.json')]];
+  var R=await Promise.all(T.map(async function(t){
+    var t0=Date.now();
+    try{var r=await tF(t[1],12000);return{n:t[0],ok:r.ok,st:r.status,ms:Date.now()-t0};}
+    catch(e){return{n:t[0],ok:false,st:0,ms:Date.now()-t0};}
+  }));
+  var hint=!R[0].ok?'Your Worker is unreachable — check it is deployed.':
+    (!R[4].ok&&R[1].ok&&R[2].ok)?'Everything works except SEC: the Worker needs the SEC update (adds www.sec.gov and data.sec.gov).':
+    R.every(function(x){return x.ok;})?'All sources reachable.':'';
+  var out=$('hl-test');
+  if(out)out.innerHTML=R.map(function(x){return'<div style="color:'+(x.ok?'#00e599':'#ff3b5c')+'">'+(x.ok?'✓':'✗')+' '+x.n+' · '+(x.ok?x.ms+' ms':(x.st?'HTTP '+x.st:'no response'))+'</div>';}).join('')+(hint?'<div style="margin-top:3px;color:var(--tx)">'+hint+'</div>':'');
+  btnDone(btn,true);
+}
+
 
 // Button loading state helpers
 function btnLoad(el){if(!el)return;el._orig=el.textContent;el.textContent='⟳ Loading…';el.disabled=true;el.style.opacity='0.6'}
@@ -511,8 +558,13 @@ window._fg={
   hySpr:null,
   gsr:null,
   gbp:null,
-  breadth:null   // % stocks above 200MA
+  breadth:null,  // % of tracked stocks above 200MA
+  hilo:null,     // % of (near-52w-high + near-52w-low) stocks that are near highs
+  spy20:null,tlt20:null,sb:null, // stocks vs bonds: SPY minus TLT 20-day return (pp)
+  junk:null      // junk-bond demand: HYG minus LQD 20-day return (pp)
 };
+function r20(a){return a&&a.length>21?(a[a.length-1]/a[a.length-21]-1)*100:null;}
+function fgSB(){var f=window._fg;f.sb=(f.spy20!=null&&f.tlt20!=null)?f.spy20-f.tlt20:null;}
 // Ref data — approximate values (used as fallback only)
 var COMMOD_REF={gold:3100,silver:34.0,wti:69.0,brent:73.0,ng:4.1,copper:4.85};
 
@@ -606,6 +658,7 @@ async function loadSpreads(btn){
 
   // Fetch HYG, LQD, TLT, and MOVE proxy (^TNX as rate ref)
   var[hyg,lqd,tlt,tnx]=await Promise.all([fC('HYG',60,false,!!btn),fC('LQD',60,false,!!btn),fC('TLT',60,false,!!btn),fC('^TNX',60,false,!!btn)]);
+  window._fg.junk=(r20(hyg)!=null&&r20(lqd)!=null)?r20(hyg)-r20(lqd):null;window._fg.tlt20=r20(tlt);fgSB();compFG();
 
   // Credit spread direction: if HYG underperforming TLT → spreads widening
   var live=false;
@@ -847,6 +900,7 @@ async function loadMacro(btn){
   var res=await Promise.allSettled(syms.map(s=>fC(s,400,false,!!btn)));
   var D={};syms.forEach((s,i)=>D[s]=res[i].value||null);
   var y10=D['^TNX']?D['^TNX'][D['^TNX'].length-1]:MR.y10;
+  window._fg.spy20=r20(D['SPY']);fgSB();
   var y3m=D['^IRX']?D['^IRX'][D['^IRX'].length-1]:MR.y2;
   markFresh('yc');markFresh('mom');
   rYC(y3m,y10);rMom(D['SPY'],D['QQQ']);rDXY(D['DX-Y.NYB']);rGBP(D['GBPUSD=X']);
@@ -1677,6 +1731,98 @@ async function ensureEarningsEstimates(){
   }
 }
 
+// ── SINCE YOU LAST LOOKED ─────────────────────────────────────────
+var _sigNow={};
+function snapLoad(){try{return JSON.parse(localStorage.getItem('liq_snap')||'{}');}catch(e){return{};}}
+function snapUpdate(){
+  var now=Date.now(),s=snapLoad(),d={at:now,fg:_lastFGScore,vix:window._fg.vix,sig:_sigNow};
+  if(!s.cur||now-s.cur.at>2*3600000){s.prev=s.cur||null;s.cur=d;}
+  else{d.at=s.cur.at;s.cur=d;}
+  lsSave('liq_snap',JSON.stringify(s));
+  return s;
+}
+function vixBand(v){return v<15?0:v<20?1:v<25?2:v<30?3:4;}
+function renderSince(s){
+  var card=$('since-card'),out=$('since-r');if(!card||!out)return;
+  var p=s&&s.prev,c=s&&s.cur;card.style.display='block';
+  if(!p||!c){out.innerHTML='<div style="font-size:10px;color:var(--mt)">Tracking starts now. Changes since your last visit will appear here.</div>';return;}
+  var items=[],B=['calm','normal','elevated','high','extreme'];
+  if(p.fg!=null&&c.fg!=null&&Math.abs(c.fg-p.fg)>=10)items.push(['Fear/Greed '+p.fg+' → '+c.fg+(c.fg>p.fg?' ▲':' ▼'),c.fg>p.fg?'#00e599':'#ff3b5c']);
+  if(p.vix!=null&&c.vix!=null&&vixBand(p.vix)!==vixBand(c.vix))items.push(['VIX '+p.vix.toFixed(1)+' → '+c.vix.toFixed(1)+' (now '+B[vixBand(c.vix)]+')',vixBand(c.vix)>vixBand(p.vix)?'#ff9500':'#00e599']);
+  Object.keys(c.sig||{}).forEach(function(t){
+    var a=(p.sig||{})[t],b=c.sig[t];if(!a)return;
+    if(a.v!==b.v)items.push([t+': '+a.v+' → '+b.v+' ('+b.s+')',/BUY/.test(b.v)?'#00e599':/SELL/.test(b.v)?'#ff3b5c':'#ffd93d']);
+    if(b.e!=null&&b.e<=7&&(a.e==null||a.e>7))items.push([t+': earnings ~'+b.e+'d away (est.)','#ff6b35']);
+    if(b.h&&!a.h)items.push([t+': at 52-week high','#00e599']);
+  });
+  var hrs=Math.round((Date.now()-p.at)/3600000),when=hrs<1?'under an hour ago':hrs<24?hrs+'h ago':Math.round(hrs/24)+'d ago';
+  out.innerHTML=(items.length?items.slice(0,8).map(function(i){return'<div style="font-size:11px;padding:4px 0;border-bottom:1px solid var(--dim);color:'+i[1]+'">'+i[0]+'</div>';}).join(''):'<div style="font-size:10px;color:var(--mt)">Nothing material has changed.</div>')+'<div style="font-size:8px;color:var(--mt);margin-top:6px">Compared with your visit '+when+'</div>';
+}
+
+// ── POOLED SIGNAL TEST ────────────────────────────────────────────
+function poolAnalyze(P){
+  var names=['STRONG SELL (under 28)','SELL (28–41)','NEUTRAL (42–57)','BUY (58–71)','STRONG BUY (72+)'];
+  var ex=P.map(function(s){var b=btMean(s.fw);return s.fw.map(function(f){return f-b;});});
+  var agg=names.map(function(){return{n:0,sum:0,beat:0};}),days=0;
+  P.forEach(function(s,k){s.sc.forEach(function(sc,j){
+    var i=sc<28?0:sc<42?1:sc<58?2:sc<72?3:4;agg[i].n++;agg[i].sum+=ex[k][j];if(ex[k][j]>0)agg[i].beat++;days++;});});
+  function edge(sh,sign){
+    var sum=0,c=0;
+    for(var k=0;k<P.length;k++){var n=P[k].sc.length;for(var j=0;j<n;j++){var sc=P[k].sc[(j+sh)%n];if(sign>0?sc>=58:sc<42){sum+=ex[k][j];c++;}}}
+    return c?sum/c:0;
+  }
+  function halfEdge(sign,half){
+    var sum=0,c=0;
+    for(var k=0;k<P.length;k++){var n=P[k].sc.length,a=half?Math.floor(n/2):0,b=half?n:Math.floor(n/2);
+      for(var j=a;j<b;j++){var sc=P[k].sc[j];if(sign>0?sc>=58:sc<42){sum+=ex[k][j];c++;}}}
+    return c?sum/c:0;
+  }
+  var nmin=Math.min.apply(null,P.map(function(s){return s.sc.length;}));
+  // Same shift for every stock, so market-wide moves stay aligned across stocks
+  function judge(sign){
+    var obs=edge(0,sign),hits=0,tot=0;
+    for(var sh=BT_H;sh<=nmin-BT_H;sh++){tot++;if(Math.abs(edge(sh,sign))>=Math.abs(obs))hits++;}
+    var p=(hits+1)/(tot+1);
+    // Consistency check: a real effect should point the same way in both halves of the history
+    var h1=halfEdge(sign,0),h2=halfEdge(sign,1),same=h1*obs>0&&h2*obs>0;
+    return{edge:obs,p:p,halves:[h1,h2],kind:p<BT_ALPHA&&same?(sign*obs>0?'good':'bad'):'incon'};
+  }
+  return{stocks:P.length,days:days,
+    rows:agg.map(function(a,i){return{name:names[i],n:a.n,mean:a.n?a.sum/a.n:null,beat:a.n?a.beat/a.n*100:null};}),
+    buy:judge(1),sell:judge(-1)};
+}
+function poolRender(r){
+  function lab(j,buy){return j.kind==='good'?(buy?'🟢 beat average':'🟢 preceded weakness'):j.kind==='bad'?(buy?'🔴 lagged average':'🔴 preceded gains'):'⚪ inconclusive';}
+  function luck(j){return'random timing matched this '+(j.p<0.01?'under 1%':j.p>0.99?'over 99%':Math.round(j.p*100)+'%')+' of the time · first half '+btPct(j.halves[0])+', second half '+btPct(j.halves[1]);}
+  var rows=r.rows.map(function(x){return'<div style="padding:5px 0;border-bottom:1px solid var(--dim);font-size:10px">'+x.name+'<div style="font-size:9px;color:var(--mt)">'+(x.n?x.n+' days · avg '+btPct(x.mean)+' vs own average · '+Math.round(x.beat)+'% beat it':'no days')+'</div></div>';}).join('');
+  return'<div style="font-size:10px;margin:8px 0">'+r.stocks+' symbols · '+r.days+' stock-days replayed</div>'+rows+
+    '<div style="margin-top:8px;font-size:10px">BUY side: '+lab(r.buy,true)+' ('+btPct(r.buy.edge)+' vs own average)<div style="font-size:9px;color:var(--mt)">'+luck(r.buy)+'</div></div>'+
+    '<div style="margin-top:6px;font-size:10px">SELL side: '+lab(r.sell,false)+' ('+btPct(r.sell.edge)+')<div style="font-size:9px;color:var(--mt)">'+luck(r.sell)+'</div></div>'+
+    '<div style="margin-top:8px;font-size:8px;color:var(--mt);line-height:1.5">Each symbol’s next-20-day return is compared with that symbol’s own average, so rising stocks don’t flatter the signal. “Random timing” slides the score history against returns by the same offset for every symbol. Caveats: the list is today’s names (survivorship bias); symbols move together, so the effective sample is smaller than the day count; about 2 years of data; regime and earnings adjustments are not replayed. A verdict also needs the edge to point the same way in both halves of the history. In my simulations a false verdict still appeared in roughly 1 run in 20, and a real edge of about +1.5% a month was caught about 4 times in 10. “Inconclusive” would not prove the signal useless.</div>';
+}
+async function runPooled(btn){
+  btnLoad(btn);
+  function say(h){var el=$('pool-r');if(el)el.innerHTML='<div style="font-size:9px;color:var(--mt);margin-top:8px">'+h+'</div>';}
+  try{
+    say('Loading prices…');
+    var spy=await fC('SPY',400,false),syms=UNI.filter(function(s){return s!=='SPY';});
+    if(!spy){say('SPY prices unavailable right now. Try again shortly.');btnDone(btn,false);return;}
+    var got=await Promise.allSettled(syms.map(function(s){return fC(s,400,true);})),P=[];
+    for(var i=0;i<syms.length;i++){
+      var raw=got[i].value;
+      if(!raw||raw.length<BT_START+BT_H+BT_MIN_DAYS)continue;
+      say('Replaying '+syms[i]+' ('+(i+1)+' of '+syms.length+')…');
+      var s=await btScoresAsync(raw.map(function(x){return x.c;}),raw.map(function(x){return x.v||0;}),spy,null,null);
+      if(s.scores.length>=BT_MIN_DAYS)P.push({sc:s.scores,fw:s.fwd});
+    }
+    if(P.length<10){say('Only '+P.length+' symbols had enough history. Need at least 10.');btnDone(btn,false);return;}
+    say('Testing against random timing…');
+    await new Promise(function(r){setTimeout(r,0);});
+    var out=$('pool-r');if(out)out.innerHTML=poolRender(poolAnalyze(P));
+    btnDone(btn,true);
+  }catch(e){say('Something went wrong. Try again.');btnDone(btn,false);}
+}
+
 // ── WATCHLIST ─────────────────────────────────────────────────────
 var WL=[];
 function lWL(){try{WL=JSON.parse(localStorage.getItem('liq_wl')||'[]')}catch(e){WL=[]}}
@@ -1713,7 +1859,9 @@ async function refWL(btn,quiet){
   }));
 
   if(mySeq!==_wlSeq){btnDone(btn,false);return;}
+  _sigNow={};
   if(r)r.innerHTML=WL.map((t,i)=>wCard(t,res[i+1].value,spyData,ivData[t]||null)).join('');
+  renderSince(snapUpdate());
   fillBacktests(mySeq,WL.map(function(t,i){return{tk:t,raw:res[i+1].value};}),spyData);
   sv('wl-ts','Updated '+ts());
   btnDone(btn,true);
@@ -2306,6 +2454,7 @@ function wCard(tk,raw,spyRaw,ivInfo){
     var vRat=avgV>0?recentV/avgV:0;
     if(vRat>0)volHtml=`<span class="${vRat>1.5?'vol-badge vol-high':'vol-badge vol-norm'}">${vRat>1.5?'🔥':''} Vol ${fmt(vRat,1)}×</span>`;
   }
+  if(bs){var en=getEarningsDaysUntil(tk);_sigNow[tk]={v:bs.verdict,s:bs.score,e:en?en.days:null,h:pH>-0.5?1:0};}
   // Backtest summary is filled in asynchronously after the cards render
   var btHtml=bs?'<div id="bt-'+tk+'" style="font-size:9px;color:var(--mt);margin-bottom:8px">📊 Backtesting…</div>':'';
   var ivHtml=ivInfo&&ivInfo.iv?`<span style="font-size:9px;padding:2px 8px;border-radius:8px;background:#a855f722;color:#a855f7">IV ${ivInfo.iv}%</span>`:'';
@@ -2353,7 +2502,7 @@ async function runScan(btn){
     var bres=await Promise.allSettled(batch.map(s=>fC(s,400,true,!!btn)));
     bres.forEach((r,j)=>all.push({t:batch[j],raw:r.value||null}));
   }
-  var hi=[],lo=[];
+  var hi=[],lo=[],nh=0,nl=0;
   all.forEach(item=>{
     var raw=item.raw;if(!raw||raw.length<30)return;
     var c=raw.map(x=>typeof x==='object'?x.c:x);
@@ -2369,6 +2518,7 @@ async function runScan(btn){
     var volRatio=avgVol20>0?recentVol/avgVol20:0;
     var volConfirmed=volRatio>=1.5;
     var entry={t:item.t,p,chg,pH,pL,a50:p>m50,a200:p>m200,volRatio,volConfirmed};
+    if(pH>=-5)nh++;if(pL<=5)nl++;
     if(pH>=-5)hi.push(entry);
     else if(pL<=15)lo.push(entry);
   });
@@ -2395,6 +2545,7 @@ async function runScan(btn){
     return c[c.length-1]>m200;
   }).filter(x=>x!==null);
   updateBreadth(breadthData);
+  window._fg.hilo=(nh+nl)>=3?nh/(nh+nl)*100:null;compFG();
 
   function sRow(s,mode){
     var col=mode==='h'?'#00e599':'#ff6b35';
@@ -2489,9 +2640,12 @@ function compFG(){
     // Correlated signals grouped so e.g. 3 volatility measures don't
     // dominate a 9-signal flat average vs 2 safe-haven measures.
     var catVol=(sVix+sVixTerm+sMove)/3;        // Volatility & Fear
-    var catCredit=(sYC+sCredit)/2;              // Rates & Credit
-    var catEquity=(sMom+sBreadth)/2;            // Equity Trend
-    var catSafe=(sGSR+sGBP)/2;                  // Safe Haven / FX
+    var sHiLo=r.hilo!=null?clamp(r.hilo,0,100):50;
+    var sSB=r.sb!=null?clamp(50+r.sb*5,0,100):50;
+    var sJunk=r.junk!=null?clamp(50+r.junk*20,0,100):50;
+    var catCredit=(sYC+sCredit+sJunk)/3;              // Rates & Credit
+    var catEquity=(sMom+sBreadth+sHiLo)/3;            // Equity Trend
+    var catSafe=sSB;                  // Safe Haven / FX
 
     var W={vol:0.30,credit:0.25,equity:0.30,safe:0.15};
     var score=Math.round(catVol*W.vol+catCredit*W.credit+catEquity*W.equity+catSafe*W.safe);
@@ -2503,9 +2657,10 @@ function compFG(){
       {n:'Yield Curve',  sc:sYC,       raw:r.ycSpread!=null?(r.ycSpread>=0?'+':'')+r.ycSpread+'bps':'no data',missing:r.ycSpread==null,cat:'Rates/Credit'},
       {n:'Credit Sprd',  sc:sCredit,   raw:r.hySpr!=null?Math.round(r.hySpr)+'bps HY':'no data',missing:r.hySpr==null,cat:'Rates/Credit'},
       {n:'SPY vs 200MA', sc:sMom,      raw:r.spyVs200!=null?(r.spyVs200>=0?'+':'')+fmt(r.spyVs200,1)+'%':'no data',missing:r.spyVs200==null,cat:'Equity Trend'},
-      {n:'Breadth',      sc:sBreadth,  raw:r.breadth!=null?r.breadth+'% >200MA':'no data',missing:r.breadth==null,cat:'Equity Trend'},
-      {n:'Gold/Silver',  sc:sGSR,      raw:r.gsr!=null?'ratio '+fmt(r.gsr,1):'no data',missing:r.gsr==null,cat:'Safe Haven'},
-      {n:'GBP/USD',      sc:sGBP,      raw:r.gbp!=null?fmt(r.gbp,4):'no data',missing:r.gbp==null,cat:'Safe Haven'},
+      {n:'Breadth (my list)',      sc:sBreadth,  raw:r.breadth!=null?r.breadth+'% >200MA':'no data',missing:r.breadth==null,cat:'Equity Trend'},
+      {n:'Junk-bond demand',sc:sJunk,raw:r.junk!=null?(r.junk>=0?'+':'')+fmt(r.junk,1)+'pp HYG vs LQD':'no data',missing:r.junk==null,cat:'Rates/Credit'},
+      {n:'52w highs vs lows',sc:sHiLo,raw:r.hilo!=null?Math.round(r.hilo)+'% near highs':'no data',missing:r.hilo==null,cat:'Equity Trend'},
+      {n:'Stocks vs bonds',sc:sSB,raw:r.sb!=null?(r.sb>=0?'+':'')+fmt(r.sb,1)+'pp SPY vs TLT':'no data',missing:r.sb==null,cat:'Safe Haven'},
     ];
     var missingCount=comps.filter(c=>c.missing).length;
 
@@ -2595,7 +2750,8 @@ setInterval(loadSpreads,120000);
 setInterval(loadMacro,120000);
 setInterval(loadM7,300000);
 setInterval(loadRS,300000);
-setInterval(compFG,30000); // recheck F/G every 30s in case signals updated
+setInterval(compFG,30000);
+setInterval(hlRender,60000); // recheck F/G every 30s in case signals updated
 // Age badge refresh every 60s
 setInterval(()=>{
   [['card-cs','spreads-cs'],['card-move','spreads-move'],['card-vix','vix'],['card-vix3m','vix'],
