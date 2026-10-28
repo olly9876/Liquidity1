@@ -394,7 +394,7 @@ function hlHost(u){
 }
 function hlog(u,ok,st){
   var h=hlHost(u),o=_hl[h]||(_hl[h]={ok:0,fail:0,lastOk:0,st:0});
-  if(ok)o.ok++,o.lastOk=Date.now();else o.fail++,o.st=st;
+  if(ok||st===404)o.ok++,o.lastOk=Date.now();else o.fail++,o.st=st;
   clearTimeout(hlog._t);hlog._t=setTimeout(hlRender,400);
 }
 function hlRender(){
@@ -404,26 +404,26 @@ function hlRender(){
     var o=_hl[n],tot=o.ok+o.fail,r=o.ok/tot;
     var s=r>=0.9?['✓','#00e599']:r>=0.5?['⚠','#ffd93d']:['✗','#ff3b5c'];
     var age=o.lastOk?Math.max(1,Math.round((now-o.lastOk)/60000))+'m ago':'never';
-    return'<span style="color:'+s[1]+'">'+n+' '+s[0]+'</span> '+(o.fail?o.fail+'/'+tot+' failed · ':'')+'last ok '+age;
+    return'<span style="color:'+s[1]+'">'+n+' '+s[0]+'</span> '+(o.fail?o.fail+'/'+tot+' failed ('+(o.st?'last HTTP '+o.st:'no response or timeout')+') · ':'')+'last ok '+age;
   }).join(' &nbsp;·&nbsp; '):'no requests yet';
 }
 async function hlTest(btn){
   btnLoad(btn);
   var P=PROXY,T=[['Worker',P.replace('/proxy?url=','/health')],
     ['Yahoo',P+encodeURIComponent('https://query1.finance.yahoo.com/v8/finance/chart/SPY?interval=1d&range=5d')],
-    ['FRED',P+encodeURIComponent('https://fred.stlouisfed.org/graph/fredgraph.csv?id=DFF')],
+    ['FRED',P+encodeURIComponent('https://fred.stlouisfed.org/graph/fredgraph.csv?id=DFF&cosd='+new Date(Date.now()-60*86400000).toISOString().slice(0,10))],
     ['Binance',P+encodeURIComponent('https://api.binance.com/api/v3/ticker/bookTicker?symbol=BTCUSDT')],
     ['SEC',P+encodeURIComponent('https://data.sec.gov/api/xbrl/companyconcept/CIK0000320193/us-gaap/Assets.json')]];
   var R=await Promise.all(T.map(async function(t){
     var t0=Date.now();
-    try{var r=await tF(t[1],12000);return{n:t[0],ok:r.ok,st:r.status,ms:Date.now()-t0};}
+    try{var r=await tF(t[1],12000),b='';if(!r.ok){try{b=(await r.text()).replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').replace(/[<>&"]/g,'').trim().slice(0,80);}catch(e){}}return{n:t[0],ok:r.ok,st:r.status,ms:Date.now()-t0,b:b};}
     catch(e){return{n:t[0],ok:false,st:0,ms:Date.now()-t0};}
   }));
   var hint=!R[0].ok?'Your Worker is unreachable — check it is deployed.':
     (!R[4].ok&&R[1].ok&&R[2].ok)?'Everything works except SEC: the Worker needs the SEC update (adds www.sec.gov and data.sec.gov).':
     R.every(function(x){return x.ok;})?'All sources reachable.':'';
   var out=$('hl-test');
-  if(out)out.innerHTML=R.map(function(x){return'<div style="color:'+(x.ok?'#00e599':'#ff3b5c')+'">'+(x.ok?'✓':'✗')+' '+x.n+' · '+(x.ok?x.ms+' ms':(x.st?'HTTP '+x.st:'no response'))+'</div>';}).join('')+(hint?'<div style="margin-top:3px;color:var(--tx)">'+hint+'</div>':'');
+  if(out)out.innerHTML=R.map(function(x){return'<div style="color:'+(x.ok?'#00e599':'#ff3b5c')+'">'+(x.ok?'✓':'✗')+' '+x.n+' · '+(x.ok?x.ms+' ms':(x.st?'HTTP '+x.st:'no response or timeout')+(x.b?' — '+x.b:''))+'</div>';}).join('')+(hint?'<div style="margin-top:3px;color:var(--tx)">'+hint+'</div>':'');
   btnDone(btn,true);
 }
 
@@ -536,7 +536,7 @@ async function fFred(id,lim=20){
   var ck='fred_'+id;
   var cached=cGet(ck);
   if(cached)return cached.slice(-lim);
-  var url='https://fred.stlouisfed.org/graph/fredgraph.csv?id='+id;
+  var url='https://fred.stlouisfed.org/graph/fredgraph.csv?id='+id+'&cosd='+new Date(Date.now()-800*86400000).toISOString().slice(0,10);
   try{
     var r=await tF(PROXY+encodeURIComponent(url),14000);
     if(!r.ok)return null;
