@@ -74,11 +74,6 @@
 <!-- SPREADS TAB -->
 <div class="tab" id="tab-spreads">
   <div class="sec">Market Spreads</div>
-  <div class="card" id="card-cs">
-    <div class="chdr"><div class="clbl">Credit Spreads</div><span class="badge" id="cs-b">LOADING</span></div>
-    <div id="cs-r"></div>
-    <div class="note" style="margin-bottom:0;margin-top:8px">HY spread &gt;500bps = stress · IG spread &gt;200bps = caution. Rising spreads = tightening credit conditions.</div>
-  </div>
   <div class="card" id="card-move">
     <div class="chdr">
       <div>
@@ -95,7 +90,7 @@
     <div class="chdr"><div class="clbl">Crypto Bid-Ask</div><span class="badge bl" id="cryb">LOADING</span></div>
     <div id="crys"></div>
   </div>
-  <div class="note">Tighter spreads = healthier liquidity. Widening is an early warning signal. Bond vol (MOVE) often leads equity vol (VIX). <strong style="color:var(--warn)">Note:</strong> ICE BofA credit spreads update with 1-day lag via FRED.</div>
+  <div class="note">Tighter spreads = healthier liquidity. Widening is an early warning signal. Bond vol (MOVE) often leads equity vol (VIX).</div>
   <div class="rts" id="spreads-ts"></div>
   <button class="rbtn" onclick="loadSpreads(this)">⟳ Refresh Spreads</button>
 </div>
@@ -151,12 +146,6 @@
   <div class="card">
     <div class="clbl">Sector Rotation vs SPY (1M)</div>
     <div id="sec-r"></div>
-  </div>
-  <div class="card" id="card-claims">
-    <div class="chdr"><div class="clbl">Initial Claims</div><span class="badge" id="claims-b">—</span></div>
-    <div class="val" id="claims-v">—</div>
-    <div class="sub">weekly jobless (000s)</div>
-    <div class="dlt" id="claims-d"></div>
   </div>
   <div class="card">
     <div class="clbl" style="margin-bottom:10px">Market Calendar</div>
@@ -274,7 +263,7 @@
     <div style="font-size:9px;color:var(--mt);margin-top:4px" id="fg-hist-i"></div>
   </div>
   <div class="card">
-    <div class="clbl" style="margin-bottom:8px">Components (10 signals · weighted by category)</div>
+    <div class="clbl" style="margin-bottom:8px">Components (9 signals · weighted by category)</div>
     <div id="fg-c"></div>
   </div>
   <div class="card">
@@ -337,7 +326,7 @@ var FED={walcl:[{d:'2026-01-14',v:6631},{d:'2026-01-28',v:6644},{d:'2026-02-04',
 var VR={cur:18.63,prev:17.93,v3m:20.1};
 var MR={y2:3.48,y10:4.08,dxy:97.6};
 // Credit spreads ref (bps) — HYG proxy for HY, LQD proxy for IG
-var CR={hy:325,ig:98,move:95};
+var CR={move:95};
 // Put/call ratio ref
 var SECS=[{n:'XLK Tech',rs:2.1},{n:'XLF Finance',rs:1.4},{n:'XLI Indust',rs:0.8},{n:'XLY Disc',rs:-0.3},{n:'XLV Health',rs:-0.7},{n:'XLE Energy',rs:-1.2},{n:'XLP Staples',rs:-1.8},{n:'XLU Util',rs:-2.1}];
 
@@ -381,8 +370,8 @@ var _hl={};
 function hlHost(u){
   try{
     var m=/[?&]url=([^&]+)/.exec(u),t=m?decodeURIComponent(m[1]):u,h=new URL(t).hostname;
-    if(/yahoo/.test(h))return/\/options\//.test(t)?'Yahoo options':/\/search/.test(t)?'Yahoo news':'Yahoo prices';
-    return/stlouisfed/.test(h)?'FRED':/binance/.test(h)?'Binance':/sec\.gov/.test(h)?'SEC':/workers\.dev/.test(h)?'Worker':h;
+    if(/yahoo/.test(h))return/\/search/.test(t)?'Yahoo news':'Yahoo prices';
+    return/binance/.test(h)?'Binance':/sec\.gov/.test(h)?'SEC':/workers\.dev/.test(h)?'Worker':h;
   }catch(e){return'?';}
 }
 function hlog(u,ok,st){
@@ -405,25 +394,20 @@ async function hlTest(btn){
   var P=PROXY,U=function(u){return P+encodeURIComponent(u);},d=new Date(Date.now()-60*86400000).toISOString().slice(0,10);
   var T=[['Worker',P.replace('/proxy?url=','/health')],
     ['Yahoo prices',U('https://query1.finance.yahoo.com/v8/finance/chart/SPY?interval=1d&range=5d')],
-    ['Yahoo options (IV)',U('https://query1.finance.yahoo.com/v7/finance/options/SPY')],
     ['Yahoo news',U('https://query1.finance.yahoo.com/v1/finance/search?q=stock+market&newsCount=1')],
-    ['FRED',U('https://fred.stlouisfed.org/graph/fredgraph.csv?id=ICSA&cosd='+d)],
-    ['FRED (data file)',U('https://fred.stlouisfed.org/data/ICSA.txt')],
-    ['Binance',U('https://api.binance.com/api/v3/ticker/bookTicker?symbol=BTCUSDT')],
+    ['Binance','https://api.binance.com/api/v3/ticker/bookTicker?symbol=BTCUSDT'],
     ['SEC',U('https://data.sec.gov/api/xbrl/companyconcept/CIK0000320193/us-gaap/Assets.json')]];
+  T=T.filter(function(t){return t[1];});
   var R=await Promise.all(T.map(async function(t){
     var t0=Date.now();
-    try{var r=await tF(t[1],12000),b='';if(!r.ok){try{b=(await r.text()).replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').replace(/[<>&"]/g,'').trim().slice(0,80);}catch(e){}}return{n:t[0],ok:r.ok,st:r.status,ms:Date.now()-t0,b:b};}
+    try{var r=await tF(t[1],12000),b='';if(!r.ok){try{b=(await r.text()).replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').replace(/[<>&"]/g,'').trim().slice(0,140);}catch(e){}}return{n:t[0],ok:r.ok,st:r.status,ms:Date.now()-t0,b:b};}
     catch(e){return{n:t[0],ok:false,st:0,ms:Date.now()-t0,b:''};}
   }));
   var by={};R.forEach(function(x){by[x.n]=x;});
   var hints=[];
   if(!by.Worker.ok)hints.push('Your Worker is unreachable — check it is deployed.');
   else{
-    if(!by.FRED.ok&&by['FRED (data file)'].ok)hints.push('FRED’s main endpoint refuses your Worker but its data file works — the app switches to that automatically.');
-    if(!by.FRED.ok&&!by['FRED (data file)'].ok)hints.push('FRED is refusing your Worker, so credit spreads are estimated from ETFs and jobless claims show reference numbers.');
-    if(!by['Yahoo options (IV)'].ok&&by['Yahoo prices'].ok)hints.push('Yahoo’s options feed refuses these requests, so implied volatility is switched off. Prices are unaffected.');
-    if(!by.SEC.ok&&by['Yahoo prices'].ok&&by.FRED.ok)hints.push('Everything works except SEC: the Worker needs the SEC update (adds www.sec.gov and data.sec.gov).');
+    if(!by.SEC.ok&&by['Yahoo prices'].ok)hints.push('Everything works except SEC: the Worker needs the SEC update (adds www.sec.gov and data.sec.gov).');
     if(R.every(function(x){return x.ok;}))hints.push('All sources reachable.');
   }
   var out=$('hl-test');
@@ -535,31 +519,6 @@ async function fC(sym,days=400,withVol=false,forceFresh=false){
   return null;
 }
 
-// ── FRED via Worker proxy ─────────────────────────────────────────
-async function fFred(id,lim=20){
-  var ck='fred_'+id,cached=cGet(ck);
-  if(cached)return cached.slice(-lim);
-  var since=new Date(Date.now()-800*86400000).toISOString().slice(0,10);
-  // Two routes to the same data; whichever works is remembered for the session
-  var tries=[{u:'https://fred.stlouisfed.org/graph/fredgraph.csv?id='+id+'&cosd='+since,f:'csv'},
-             {u:'https://fred.stlouisfed.org/data/'+id+'.txt',f:'txt'}];
-  if(_fredAlt)tries.reverse();
-  for(var i=0;i<tries.length;i++){
-    try{
-      var r=await tF(PROXY+encodeURIComponent(tries[i].u),14000);
-      if(!r.ok)continue;
-      var txt=await r.text(),out=[],csv=tries[i].f==='csv';
-      txt.split('\n').forEach(function(l){
-        var p=csv?l.split(','):l.trim().split(/\s+/),d=(p[0]||'').trim();
-        if(/^\d{4}-\d\d-\d\d$/.test(d)&&d>=since){var v=parseFloat(p[1]);if(!isNaN(v))out.push({d:d,v:v});}
-      });
-      if(out.length>=2){_fredAlt=!csv;cSet(ck,out);return out.slice(-lim);}
-    }catch(e){}
-  }
-  return null;
-}
-var _fredAlt=false;
-
 // ── Raw numeric values for continuous F/G scoring ─────────────────
 window._fg={
   vix:null,
@@ -567,7 +526,6 @@ window._fg={
   move:null,
   ycSpread:null,
   spyVs200:null,
-  hySpr:null,
   gsr:null,
   gbp:null,
   breadth:null,  // % of tracked stocks above 200MA
@@ -657,43 +615,19 @@ async function loadCommod(btn){
   btnDone(btn,ok);
 }
 
-// ── CREDIT SPREADS + MOVE ────────────────────────────────────────
-// Estimate HY spread: HYG yield proxy vs TLT. Real approach: use ETF price changes as proxy.
-// We fetch HYG and LQD and compute 30d return spread vs TLT as a proxy for spread direction.
+// ── MOVE + STOCKS-vs-BONDS INPUTS ────────────────────────────────────────
 async function loadSpreads(btn){
   btnLoad(btn);
   loadCrypto();
 
   // Show reference while loading
-  rCreditSpreads(CR.hy,CR.ig,null,true);
   rMove(CR.move,CR.move,null,true);
 
   // Fetch HYG, LQD, TLT, and MOVE proxy (^TNX as rate ref)
   var[hyg,lqd,tlt,tnx]=await Promise.all([fC('HYG',60,false,!!btn),fC('LQD',60,false,!!btn),fC('TLT',60,false,!!btn),fC('^TNX',60,false,!!btn)]);
   window._fg.junk=(r20(hyg)!=null&&r20(lqd)!=null)?r20(hyg)-r20(lqd):null;window._fg.tlt20=r20(tlt);fgSB();compFG();
 
-  // Credit spread direction: if HYG underperforming TLT → spreads widening
-  var live=false;
-  // Real FRED credit spreads — ICE BofA HY and IG OAS
-  var[hyFred,igFred]=await Promise.all([fFred('BAMLH0A0HYM2',5),fFred('BAMLC0A0CM',5)]);
-  if(hyFred&&hyFred.length>=2){
-    var hyLive=hyFred[hyFred.length-1].v*100; // FRED returns in %, convert to bps
-    var igLive=igFred?igFred[igFred.length-1].v*100:CR.ig;
-    rCreditSpreads(Math.round(hyLive),Math.round(igLive),null,false);
-    markFresh('spreads-cs');live=true;
-  }else if(hyg&&hyg.length>=22&&tlt&&tlt.length>=22){
-    var hygRet=(hyg[hyg.length-1]-hyg[hyg.length-22])/hyg[hyg.length-22]*100;
-    var tltRet=(tlt[tlt.length-1]-tlt[tlt.length-22])/tlt[tlt.length-22]*100;
-    // spread direction: negative means credit underperforming (spreads widening)
-    var hySpr=hygRet-tltRet;
-    var lqdRet=lqd&&lqd.length>=22?(lqd[lqd.length-1]-lqd[lqd.length-22])/lqd[lqd.length-22]*100:0;
-    var igSpr=lqd?lqdRet-tltRet:0;
-    // Map to bps change from reference
-    var hyBps=Math.round(CR.hy-hySpr*8);
-    var igBps=Math.round(CR.ig-igSpr*5);
-    rCreditSpreads(hyBps,igBps,{hySpr,igSpr,hygRet,lqdRet,tltRet},false);
-    markFresh('spreads-cs');live=true;
-  }else{rCreditSpreads(CR.hy,CR.ig,null,true)}
+  var live=!!((hyg&&lqd&&tlt)||(tnx&&tnx.length>=20));
 
   // MOVE proxy from TNX daily bps moves (absolute, not percentage)
   if(tnx&&tnx.length>=20){
@@ -710,31 +644,6 @@ async function loadSpreads(btn){
 
   sv('spreads-ts','Updated '+ts());
   btnDone(btn,live);
-}
-
-function rCreditSpreads(hy,ig,extra,isRef){
-  var csb=$('cs-b');
-  if(csb){
-    var col=hy>500||ig>200?'red':hy>350||ig>150?'warn':'grn';
-    csb.textContent=isRef?'REF DATA':(extra?'ESTIMATE · ':'')+(hy>500?'STRESS':hy>350?'CAUTION':'HEALTHY');
-    csb.className='badge '+(isRef||extra?'br':col==='grn'?'bl':col==='warn'?'bo':'brd');
-  }
-  var rows=[
-    {l:'HY Spread',v:hy,ref:350,max:700,unit:'bps',note:hy<300?'Tight — risk-on':hy<500?'Normal':hy<700?'Stress':'Crisis'},
-    {l:'IG Spread',v:ig,ref:150,max:300,unit:'bps',note:ig<100?'Tight':ig<150?'Normal':ig<200?'Caution':'Stress'},
-  ];
-  if(extra){
-    rows.push({l:'HYG vs TLT',v:extra.hySpr,ref:0,max:10,unit:'%1M',col:extra.hySpr>=0?'#00e599':'#ff3b5c',note:extra.hySpr>=0?'Outperforming':'Underperforming',signed:true});
-  }
-  $('cs-r').innerHTML=rows.map(r=>{
-    var col=r.col||(r.v<r.ref*0.7?'#00e599':r.v<r.ref?'#ffd93d':r.v<r.ref*1.4?'#ff9500':'#ff3b5c');
-    var pct=Math.min(100,Math.abs(r.v)/(r.max||r.ref*2)*100);
-    return`<div class="brow"><div class="blbl" style="font-size:9px">${r.l}</div><div class="btrk"><div class="bfil" style="width:${pct}%;background:${col}"></div></div><div style="text-align:right;flex-shrink:0"><div style="font-size:10px;color:${col}">${r.signed&&r.v>=0?'+':''}${r.v.toFixed(r.unit==='bps'?0:1)}${r.unit}</div><div style="font-size:8px;color:var(--mt)">${r.note}</div></div></div>`;
-  }).join('');
-  setCardAge('card-cs','spreads-cs',isRef);
-  window._csS=hy>500||ig>200?'bear':hy>350?'neut':'bull';
-  window._fg.hySpr=hy;
-  compFG();
 }
 
 function rMove(val,prev,hist,isRef){
@@ -924,11 +833,6 @@ async function loadMacro(btn){
     var sd=sk.map(k=>{var c=D[k];if(!c||c.length<22)return{n:sn[k],rs:0};return{n:sn[k],rs:parseFloat(((c[c.length-1]-c[c.length-22])/c[c.length-22]*100-sr).toFixed(1))}}).sort((a,b)=>b.rs-a.rs);
     rSecs(sd);
   }
-  // Jobless claims — FRED ICSA (weekly initial claims)
-  var claims=await fFred('ICSA',5);
-  if(claims&&claims.length>=2){
-    rClaims(claims[claims.length-1].v,claims[claims.length-2].v,false);
-  }else{rClaims(213000,210000,true);}
   // Market news headlines
   fetchNews();
   sv('mac-ts','Updated '+ts());compFG();
@@ -936,18 +840,6 @@ async function loadMacro(btn){
 }
 
 // ── JOBLESS CLAIMS ──────────────────────────────────────────
-function rClaims(val,prev,isRef){
-  var k=Math.round(val/1000);
-  sv('claims-v',k);
-  var chg=val-prev;
-  var cd=$('claims-d');
-  if(cd){cd.textContent=(chg>=0?'▲ +':'▼ ')+Math.abs(Math.round(chg/1000))+'k vs prev week';cd.className='dlt '+(chg>=0?'dn':'up')}
-  var cb=$('claims-b');
-  var lbl=val<220000?'HEALTHY':val<260000?'NORMAL':val<300000?'RISING':'ELEVATED';
-  var col=val<220000?'#00e599':val<260000?'#ffd93d':val<300000?'#ff9500':'#ff3b5c';
-  if(cb){cb.textContent=isRef?'REF':lbl;cb.className='badge';cb.style.cssText=`background:${col}22;color:${col};border:1px solid ${col}44`}
-}
-
 // ── MARKET CALENDAR ───────────────────────────────────────────────
 function renderCal(){
   var now=new Date();
@@ -1838,29 +1730,10 @@ async function refWL(btn,quiet){
   var res=await Promise.allSettled(allSyms.map(t=>fC(t,400,true,!!btn)));
   var spyData=res[0].value?res[0].value.map(x=>typeof x==='object'?x.c:x):null;
 
-  // Implied volatility is optional. Yahoo's options feed may refuse logged-out requests (HTTP 401);
-  // if every request is refused, stop asking for a day instead of failing on every refresh.
-  var ivData={},ivOff=false,ivTried=0,ivRefused=0;
-  try{ivOff=Date.now()-(+localStorage.getItem('liq_iv_off')||0)<86400000;}catch(e){}
-  if(!ivOff)await Promise.allSettled(WL.map(async tk=>{
-    try{
-      ivTried++;
-      var url='https://query1.finance.yahoo.com/v7/finance/options/'+tk;
-      var rv=await tF(PROXY+encodeURIComponent(url),10000);
-      if(!rv.ok){if(rv.status===401)ivRefused++;return;}
-      var j=await rv.json();
-      var chain=j.optionChain.result[0];
-      var calls=chain.options[0]&&chain.options[0].calls||[];
-      var price=chain.quote&&chain.quote.regularMarketPrice||0;
-      var atm=calls.reduce((best,c)=>Math.abs(c.strike-price)<Math.abs((best.strike||999)-price)?c:best,{});
-      if(atm.impliedVolatility)ivData[tk]={iv:parseFloat((atm.impliedVolatility*100).toFixed(1))};
-    }catch(e){}
-  }));
-  if(ivTried&&ivRefused===ivTried)lsSave('liq_iv_off',String(Date.now()));
 
   if(mySeq!==_wlSeq){btnDone(btn,false);return;}
   _sigNow={};
-  if(r)r.innerHTML=WL.map((t,i)=>wCard(t,res[i+1].value,spyData,ivData[t]||null)).join('');
+  if(r)r.innerHTML=WL.map((t,i)=>wCard(t,res[i+1].value,spyData)).join('');
   renderSince(snapUpdate());
   fillBacktests(mySeq,WL.map(function(t,i){return{tk:t,raw:res[i+1].value};}),spyData);
   sv('wl-ts','Updated '+ts());
@@ -2404,7 +2277,7 @@ async function fillBacktests(seq,items,spy){
   }
 }
 
-function wCard(tk,raw,spyRaw,ivInfo){
+function wCard(tk,raw,spyRaw){
   var c=raw?raw.map(x=>typeof x==='object'?x.c:x):null;
   var vols=raw?raw.map(x=>typeof x==='object'?x.v:null):null;
   if(!c||c.length<10)return`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-family:'Bebas Neue',sans-serif;font-size:18px;color:var(--ac)">${tk}</span><button class="rmv" onclick="rmWL('${tk}')">✕</button></div><div style="font-size:10px;color:var(--warn);margin-top:6px">⚠ No data — check ticker is a valid US stock.</div></div>`;
@@ -2457,7 +2330,6 @@ function wCard(tk,raw,spyRaw,ivInfo){
   if(bs){var en=getEarningsDaysUntil(tk);_sigNow[tk]={v:bs.verdict,s:bs.score,e:en?en.days:null,h:pH>-0.5?1:0};}
   // Backtest summary is filled in asynchronously after the cards render
   var btHtml=bs?'<div id="bt-'+tk+'" style="font-size:9px;color:var(--mt);margin-bottom:8px">📊 Backtesting…</div>':'';
-  var ivHtml=ivInfo&&ivInfo.iv?`<span style="font-size:9px;padding:2px 8px;border-radius:8px;background:#a855f722;color:#a855f7">IV ${ivInfo.iv}%</span>`:'';
 
   // Estimated next earnings release (from SEC 8-K history — see earnings module)
   var earnBadge='';
@@ -2467,7 +2339,7 @@ function wCard(tk,raw,spyRaw,ivInfo){
     earnBadge=`<span style="font-size:9px;padding:2px 8px;border-radius:8px;background:${eCol}22;color:${eCol}" title="Estimated from past earnings-release filings. Last release: ${earnInfo.last}. Estimate: ${earnInfo.est}">📅 Earnings ~${earnInfo.days===0?'today':earnInfo.days+'d'} (est.)</span>`;
   }
 
-  return`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div><span style="font-family:'Bebas Neue',sans-serif;font-size:20px;color:var(--ac)">${tk}</span><span style="font-size:9px;padding:2px 7px;border-radius:8px;margin-left:8px;background:${sc}22;color:${sc};border:1px solid ${sc}44">${sig==='bull'?'UPTREND':sig==='bear'?'DOWNTREND':'MIXED'}</span></div><button class="rmv" onclick="rmWL('${tk}')">✕</button></div>${bsHtml}${btHtml}<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:10px"><div><div style="font-family:'Bebas Neue',sans-serif;font-size:32px;line-height:1">$${fmt(p,2)}</div><div style="font-size:11px;color:${chg>=0?'#00e599':'#ff3b5c'};margin-top:2px">${chg>=0?'▲ +':'▼ '}${fmt(Math.abs(chg),2)}%</div></div><div style="text-align:right;font-size:10px;color:var(--mt)"><div>50MA <span style="color:${a50?'#00e599':'#ff3b5c'}">${a50?'▲':'▼'} $${fmt(m50,0)}</span></div><div>200MA <span style="color:${a200?'#00e599':'#ff3b5c'}">${a200?'▲':'▼'} $${fmt(m200,0)}</span></div></div></div><div style="font-size:9px;color:var(--mt);display:flex;justify-content:space-between;margin-bottom:4px"><span>$${fmt(l,0)}</span><span style="color:var(--tx)">${rng}% of range</span><span>$${fmt(h,0)}</span></div><div class="rng"><div class="rnf" style="width:${rng}%"></div><div class="rnt" style="left:${rng}%"></div></div><div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:8px">${pill(a50?'pu':'pd',(a50?'▲':'▼')+' 50MA')}${pill(a200?'pu':'pd',(a200?'▲':'▼')+' 200MA')}${pill(gx?'pp':'pd',gx?'Golden ✦':'Death ✖')}${rsHtml}${volHtml}<span style="font-size:9px;padding:2px 8px;border-radius:8px;background:${ddCol}15;color:${ddCol}">DD ${fmt(dd,1)}%</span>${ivHtml}${earnBadge}${pH>-3?'<span class="pill pb">🚀 Near High</span>':''}</div>${renderTechnicals(c)}</div>`;
+  return`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div><span style="font-family:'Bebas Neue',sans-serif;font-size:20px;color:var(--ac)">${tk}</span><span style="font-size:9px;padding:2px 7px;border-radius:8px;margin-left:8px;background:${sc}22;color:${sc};border:1px solid ${sc}44">${sig==='bull'?'UPTREND':sig==='bear'?'DOWNTREND':'MIXED'}</span></div><button class="rmv" onclick="rmWL('${tk}')">✕</button></div>${bsHtml}${btHtml}<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:10px"><div><div style="font-family:'Bebas Neue',sans-serif;font-size:32px;line-height:1">$${fmt(p,2)}</div><div style="font-size:11px;color:${chg>=0?'#00e599':'#ff3b5c'};margin-top:2px">${chg>=0?'▲ +':'▼ '}${fmt(Math.abs(chg),2)}%</div></div><div style="text-align:right;font-size:10px;color:var(--mt)"><div>50MA <span style="color:${a50?'#00e599':'#ff3b5c'}">${a50?'▲':'▼'} $${fmt(m50,0)}</span></div><div>200MA <span style="color:${a200?'#00e599':'#ff3b5c'}">${a200?'▲':'▼'} $${fmt(m200,0)}</span></div></div></div><div style="font-size:9px;color:var(--mt);display:flex;justify-content:space-between;margin-bottom:4px"><span>$${fmt(l,0)}</span><span style="color:var(--tx)">${rng}% of range</span><span>$${fmt(h,0)}</span></div><div class="rng"><div class="rnf" style="width:${rng}%"></div><div class="rnt" style="left:${rng}%"></div></div><div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:8px">${pill(a50?'pu':'pd',(a50?'▲':'▼')+' 50MA')}${pill(a200?'pu':'pd',(a200?'▲':'▼')+' 200MA')}${pill(gx?'pp':'pd',gx?'Golden ✦':'Death ✖')}${rsHtml}${volHtml}<span style="font-size:9px;padding:2px 8px;border-radius:8px;background:${ddCol}15;color:${ddCol}">DD ${fmt(dd,1)}%</span>${earnBadge}${pH>-3?'<span class="pill pb">🚀 Near High</span>':''}</div>${renderTechnicals(c)}</div>`;
 }
 
 // ── BREAKOUT SCANNER (expanded + volume) ─────────────────────────
@@ -2627,8 +2499,6 @@ function compFG(){
     var sYC=r.ycSpread!=null?clamp(50+r.ycSpread/300*50,0,100):50;
     // 5. SPY vs 200MA (%): +10%→85, 0→50, -10%→15
     var sMom=r.spyVs200!=null?clamp(50+r.spyVs200*3.5,0,100):50;
-    // 6. HY Credit Spread (bps): 200→90, 350→55, 600→10
-    var sCredit=r.hySpr!=null?clamp(100-(r.hySpr-150)/(650-150)*90,0,100):50;
     // 7. Gold/Silver Ratio: 60→90, 80→50, 100→10
     var sGSR=r.gsr!=null?clamp(100-(r.gsr-55)/(105-55)*90,0,100):50;
     // 8. GBP/USD: 1.40→90, 1.25→50, 1.10→10
@@ -2643,7 +2513,7 @@ function compFG(){
     var sHiLo=r.hilo!=null?clamp(r.hilo,0,100):50;
     var sSB=r.sb!=null?clamp(50+r.sb*5,0,100):50;
     var sJunk=r.junk!=null?clamp(50+r.junk*20,0,100):50;
-    var catCredit=(sYC+sCredit+sJunk)/3;              // Rates & Credit
+    var catCredit=(sYC+sJunk)/2;              // Rates & Credit
     var catEquity=(sMom+sBreadth+sHiLo)/3;            // Equity Trend
     var catSafe=sSB;                  // Safe Haven / FX
 
@@ -2655,7 +2525,6 @@ function compFG(){
       {n:'VIX Term',     sc:sVixTerm,  raw:r.vixSpread!=null?(r.vixSpread>=0?'+':'')+fmt(r.vixSpread,1)+' spread':'no data',missing:r.vixSpread==null,cat:'Volatility'},
       {n:'MOVE Index',   sc:sMove,     raw:r.move!=null?'MOVE ~'+Math.round(r.move):'no data',missing:r.move==null,cat:'Volatility'},
       {n:'Yield Curve',  sc:sYC,       raw:r.ycSpread!=null?(r.ycSpread>=0?'+':'')+r.ycSpread+'bps':'no data',missing:r.ycSpread==null,cat:'Rates/Credit'},
-      {n:'Credit Sprd',  sc:sCredit,   raw:r.hySpr!=null?Math.round(r.hySpr)+'bps HY':'no data',missing:r.hySpr==null,cat:'Rates/Credit'},
       {n:'SPY vs 200MA', sc:sMom,      raw:r.spyVs200!=null?(r.spyVs200>=0?'+':'')+fmt(r.spyVs200,1)+'%':'no data',missing:r.spyVs200==null,cat:'Equity Trend'},
       {n:'Breadth (my list)',      sc:sBreadth,  raw:r.breadth!=null?r.breadth+'% >200MA':'no data',missing:r.breadth==null,cat:'Equity Trend'},
       {n:'Junk-bond demand',sc:sJunk,raw:r.junk!=null?(r.junk>=0?'+':'')+fmt(r.junk,1)+'pp HYG vs LQD':'no data',missing:r.junk==null,cat:'Rates/Credit'},
@@ -2732,11 +2601,9 @@ fetchNews();
 rYC(MR.y2,MR.y10);rMom(null,null);rDXY(null);rGBP(null);rSecs(null);
 rVix(VR.cur,VR.prev,VR.v3m,null,true);
 rPC(VR.cur,VR.v3m,true);
-rCreditSpreads(CR.hy,CR.ig,null,true);
 rMove(CR.move,CR.move,null,true);
-rClaims(213000,210000,true);
 renderCal();
-window._gsrS='neut';window._gbpS='neut';window._csS='neut';window._moveS='neut';window._pcS='neut';window._yS='neut';window._vS='neut';window._mS='neut';
+window._gsrS='neut';window._gbpS='neut';window._moveS='neut';window._pcS='neut';window._yS='neut';window._vS='neut';window._mS='neut';
 compFG();
 loadCommod();loadSpreads();loadVix();loadMacro();loadM7();loadRS();runScan();
 // Earnings-date estimates from SEC: deferred so they never compete with the first data load
@@ -2753,7 +2620,7 @@ setInterval(compFG,30000);
 setInterval(hlRender,60000); // recheck F/G every 30s in case signals updated
 // Age badge refresh every 60s
 setInterval(()=>{
-  [['card-cs','spreads-cs'],['card-move','spreads-move'],['card-vix','vix'],['card-vix3m','vix'],
+  [['card-move','spreads-move'],['card-vix','vix'],['card-vix3m','vix'],
    ['card-pc','pc'],['card-yc','yc'],['card-mom','mom'],['card-dxy','dxy'],['card-gbp','gbp']].forEach(([cid,key])=>{
     if(_fetchTimes[key])setCardAge(cid,key,false);
   });
