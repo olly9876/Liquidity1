@@ -209,6 +209,7 @@
   <div id="wl-e" class="note">No stocks yet. Add tickers above.</div>
   <div id="wl-r"></div>
   <div class="rts" id="wl-ts"></div>
+  <div class="card" id="fwd-card"><div class="clbl">Forward scorecard · what happened after the app said BUY or SELL</div><div id="fwd-r" style="font-size:10px;color:var(--mt);line-height:1.5">Logging starts when your watchlist loads.</div><button class="rbtn" onclick="fwdUpdate(this)">Update results</button></div>
   <button class="rbtn" onclick="refWL(this)">⟳ Refresh Watchlist</button>
 </div>
 
@@ -1675,9 +1676,37 @@ function poolAnalyze(P){
     var h1=halfEdge(sign,0),h2=halfEdge(sign,1),same=h1*obs>0&&h2*obs>0;
     return{edge:obs,p:p,halves:[h1,h2],kind:p<BT_ALPHA&&same?(sign*obs>0?'good':'bad'):'incon'};
   }
+  function withN(j,n){j.n=n;return j;}
+  // The same measure and the same timing-shuffle test, applied to a one-line rule
+  function rule(key,hold){
+    if(!P[0][key])return null;
+    var A=P.map(function(s){return s[key].map(function(v){return hold?v:!v;});});
+    function e(sh){var sum=0,c=0;for(var k=0;k<P.length;k++){var n=P[k].sc.length;for(var j=0;j<n;j++){if(A[k][(j+sh)%n]){sum+=ex[k][j];c++;}}}return c?sum/c:0;}
+    function h(half){var sum=0,c=0;for(var k=0;k<P.length;k++){var n=P[k].sc.length,a=half?Math.floor(n/2):0,b=half?n:Math.floor(n/2);for(var j=a;j<b;j++){if(A[k][j]){sum+=ex[k][j];c++;}}}return c?sum/c:0;}
+    var obs=e(0),cnt=0,hits=0,tot=0,sign=hold?1:-1;
+    A.forEach(function(a){a.forEach(function(v){if(v)cnt++;});});
+    for(var sh=BT_H;sh<=nmin-BT_H;sh++){tot++;if(Math.abs(e(sh))>=Math.abs(obs))hits++;}
+    var h1=h(0),h2=h(1),p=(hits+1)/(tot+1);
+    return{n:cnt,edge:obs,p:p,halves:[h1,h2],kind:p<BT_ALPHA&&h1*obs>0&&h2*obs>0?(sign*obs>0?'good':'bad'):'incon'};
+  }
   return{stocks:P.length,days:days,
     rows:agg.map(function(a,i){return{name:names[i],n:a.n,mean:a.n?a.sum/a.n:null,beat:a.n?a.beat/a.n*100:null};}),
-    buy:judge(1),sell:judge(-1)};
+    buy:withN(judge(1),agg[3].n+agg[4].n),sell:withN(judge(-1),agg[0].n+agg[1].n),
+    rules:{ma200:{hold:rule('a200',true),avoid:rule('a200',false)},ma50:{hold:rule('a50',true),avoid:rule('a50',false)}}};
+}
+function poolRules(r){
+  var R=r.rules;if(!R||!R.ma200||!R.ma200.hold)return'';
+  function luck(x){return'random timing matched this '+(x.p<0.01?'under 1%':x.p>0.99?'over 99%':Math.round(x.p*100)+'%')+' of the time';}
+  function line(name,x){return'<div style="padding:4px 0;border-bottom:1px solid var(--dim);font-size:10px">'+name+'<div style="font-size:9px;color:var(--mt)">'+x.n+' days · '+btPct(x.edge)+' vs own average · '+luck(x)+'</div></div>';}
+  var bestHold=Math.max(R.ma200.hold.edge,R.ma50.hold.edge),bestAvoid=Math.min(R.ma200.avoid.edge,R.ma50.avoid.edge);
+  var buyAhead=r.buy.edge>bestHold,sellAhead=r.sell.edge<bestAvoid,t;
+  if(!buyAhead&&!sellAhead)t='The 12-part score did <b>not</b> beat the one-line rules on either side. A simple moving-average rule may serve as well.';
+  else if(buyAhead&&sellAhead)t='The score came out ahead of the simple rules on both sides ('+btPct(r.buy.edge-bestHold)+' on BUY, '+btPct(bestAvoid-r.sell.edge)+' on SELL).';
+  else t='Mixed: the score was '+(buyAhead?'ahead':'behind')+' the simple rules on the BUY side and '+(sellAhead?'ahead':'behind')+' on the SELL side.';
+  return'<div style="margin-top:12px;font-size:9px;letter-spacing:1px;color:var(--ac)">VERSUS ONE-LINE RULES (same days, same measure)</div>'+
+    line('Score BUY-side (58+)',r.buy)+line('Above its 200-day average',R.ma200.hold)+line('Above its 50-day average',R.ma50.hold)+
+    line('Score SELL-side (under 42)',r.sell)+line('Below its 200-day average',R.ma200.avoid)+line('Below its 50-day average',R.ma50.avoid)+
+    '<div style="margin-top:6px;font-size:10px">'+t+' Gaps this small are ties unless they are large next to the noise shown above.</div>';
 }
 function poolRender(r){
   function lab(j,buy){return j.kind==='good'?(buy?'🟢 beat average':'🟢 preceded weakness'):j.kind==='bad'?(buy?'🔴 lagged average':'🔴 preceded gains'):'⚪ inconclusive';}
@@ -1686,6 +1715,7 @@ function poolRender(r){
   return'<div style="font-size:10px;margin:8px 0">'+r.stocks+' symbols · '+r.days+' stock-days replayed</div>'+rows+
     '<div style="margin-top:8px;font-size:10px">BUY side: '+lab(r.buy,true)+' ('+btPct(r.buy.edge)+' vs own average)<div style="font-size:9px;color:var(--mt)">'+luck(r.buy)+'</div></div>'+
     '<div style="margin-top:6px;font-size:10px">SELL side: '+lab(r.sell,false)+' ('+btPct(r.sell.edge)+')<div style="font-size:9px;color:var(--mt)">'+luck(r.sell)+'</div></div>'+
+    poolRules(r)+
     '<div style="margin-top:8px;font-size:8px;color:var(--mt);line-height:1.5">Each symbol’s next-20-day return is compared with that symbol’s own average, so rising stocks don’t flatter the signal. “Random timing” slides the score history against returns by the same offset for every symbol. Caveats: the list is today’s names (survivorship bias); symbols move together, so the effective sample is smaller than the day count; about 2 years of data; regime and earnings adjustments are not replayed. A verdict also needs the edge to point the same way in both halves of the history. In my simulations a false verdict still appeared in roughly 1 run in 20, and a real edge of about +1.5% a month was caught about 4 times in 10. “Inconclusive” would not prove the signal useless.</div>';
 }
 async function runPooled(btn){
@@ -1701,7 +1731,7 @@ async function runPooled(btn){
       if(!raw||raw.length<BT_START+BT_H+BT_MIN_DAYS)continue;
       say('Replaying '+syms[i]+' ('+(i+1)+' of '+syms.length+')…');
       var s=await btScoresAsync(raw.map(function(x){return x.c;}),raw.map(function(x){return x.v||0;}),spy,null,null);
-      if(s.scores.length>=BT_MIN_DAYS)P.push({sc:s.scores,fw:s.fwd});
+      if(s.scores.length>=BT_MIN_DAYS)P.push({sc:s.scores,fw:s.fwd,a200:s.a200,a50:s.a50});
     }
     if(P.length<10){say('Only '+P.length+' symbols had enough history. Need at least 10.');btnDone(btn,false);return;}
     say('Testing against random timing…');
@@ -1709,6 +1739,71 @@ async function runPooled(btn){
     var out=$('pool-r');if(out)out.innerHTML=poolRender(poolAnalyze(P));
     btnDone(btn,true);
   }catch(e){say('Something went wrong. Try again.');btnDone(btn,false);}
+}
+
+// ── FORWARD SCORECARD ─────────────────────────────────────────────
+// Logs the verdict the app shows (at most one per stock per week), then, once 20
+// trading days have passed, records what the stock did compared with its own
+// average and with SPY. It is the one test that hindsight cannot touch.
+var FWD_KEY='liq_fwd';
+function fwdLoad(){try{var a=JSON.parse(localStorage.getItem(FWD_KEY)||'[]');return Array.isArray(a)?a:[];}catch(e){return[];}}
+function fwdSide(v){return/BUY/.test(v)?'buy':/SELL/.test(v)?'sell':'neu';}
+function fwdLog(){
+  var now=Date.now(),day=new Date(now).toISOString().slice(0,10),a=fwdLoad(),changed=false;
+  Object.keys(_sigNow).forEach(function(tk){
+    var g=_sigNow[tk];if(!g||!(g.p>0))return;
+    var last=null;for(var i=a.length-1;i>=0;i--)if(a[i].t===tk){last=a[i];break;}
+    if(last&&(now-Date.parse(last.d+'T00:00:00Z'))/86400000<6)return;   // one per stock per week
+    a.push({t:tk,d:day,v:g.v,s:g.s,p:g.p,m:g.m||null,r:null});changed=true;
+  });
+  if(changed)lsSave(FWD_KEY,JSON.stringify(a));
+}
+async function fwdUpdate(btn){
+  btnLoad(btn);
+  try{
+    var a=fwdLoad(),pend=a.filter(function(x){return x.r==null&&Date.now()-Date.parse(x.d+'T00:00:00Z')>=26*86400000;});
+    if(pend.length){
+      var spy=await fCLong('SPY'),syms={};
+      pend.forEach(function(x){syms[x.t]=1;});
+      for(var tk in syms){
+        var h=await fCLong(tk);if(!h||!spy)continue;
+        var base=0,cnt=0;for(var i=0;i+BT_H<h.c.length;i++){base+=(h.c[i+BT_H]/h.c[i]-1)*100;cnt++;}
+        base=cnt?base/cnt:0;
+        var al=btAlignSpy(h.d,spy.d);
+        pend.forEach(function(x){
+          if(x.t!==tk)return;
+          var idx=-1;for(var i=h.d.length-1;i>=0;i--){if(h.d[i]<=x.d){idx=i;break;}}
+          if(idx<0||idx+BT_H>=h.c.length-1)return;           // not enough completed days yet, or date outside the data
+          var j=al[idx+BT_H];
+          x.x=(x.m&&j>=0&&spy.c[j])?(spy.c[j]/x.m-1)*100:null;
+          x.r=(h.c[idx+BT_H]/x.p-1)*100;x.b=base;
+        });
+      }
+      lsSave(FWD_KEY,JSON.stringify(a));
+    }
+    fwdRender();btnDone(btn,true);
+  }catch(e){btnDone(btn,false);}
+}
+function fwdRender(){
+  var el=$('fwd-r');if(!el)return;
+  var a=fwdLoad();
+  if(!a.length){el.innerHTML='No signals logged yet. One is recorded per stock per week when your watchlist loads.';return;}
+  var res=a.filter(function(x){return x.r!=null;}),first=a.reduce(function(m,x){return x.d<m?x.d:m;},a[0].d);
+  var head='<div>'+a.length+' signals logged since '+first+' · '+res.length+' resolved · '+(a.length-res.length)+' waiting for 20 trading days</div>';
+  if(!res.length){el.innerHTML=head+'<div style="margin-top:6px">Results appear about a month after each signal.</div>';return;}
+  function row(name,list,sign){
+    if(!list.length)return'<div style="margin-top:7px"><div style="color:var(--tx)">'+name+'</div><div>none resolved yet</div></div>';
+    var ex=list.map(function(x){return x.r-x.b;}),m=btMean(ex);
+    var sd=list.length>1?Math.sqrt(ex.reduce(function(s,v){return s+(v-m)*(v-m);},0)/(list.length-1)):0;
+    var margin=1.96*sd/Math.sqrt(Math.max(1,list.length/4));      // weekly signals overlap: roughly 1 independent result per 4
+    var beat=Math.round(100*ex.filter(function(v){return v>0;}).length/ex.length);
+    var sp=list.filter(function(x){return x.x!=null;}).map(function(x){return x.r-x.x;});
+    var col=sign===0?'var(--mt)':sign*m>0?'#00e599':'#ff3b5c';
+    return'<div style="margin-top:7px"><div style="color:var(--tx)">'+name+' · '+list.length+' resolved</div><div>avg <span style="color:'+col+'">'+btPct(m)+'</span> vs the stock’s own average (rough ±'+margin.toFixed(1)+'%) · '+beat+'% beat it'+(sp.length?' · '+btPct(btMean(sp))+' vs SPY':'')+'</div></div>';
+  }
+  var G=function(side){return res.filter(function(x){return fwdSide(x.v)===side;});},buy=G('buy');
+  el.innerHTML=head+row('BUY signals',buy,1)+row('NEUTRAL',G('neu'),0)+row('SELL signals',G('sell'),-1)+
+    '<div style="margin-top:8px;font-size:8px;line-height:1.5">'+(buy.length<20?'<b>Too early to judge.</b> ':'')+'Each result is the stock’s return over the 20 trading days after the signal, minus that stock’s own average 20-day return. Entry is the price you saw. The ± is a rough margin and is optimistic because stocks move together. Expect many months of signals before this can confirm even a sizeable edge; it is most useful for catching a signal that clearly fails.</div>';
 }
 
 // ── WATCHLIST ─────────────────────────────────────────────────────
@@ -1735,6 +1830,7 @@ async function refWL(btn,quiet){
   _sigNow={};
   if(r)r.innerHTML=WL.map((t,i)=>wCard(t,res[i+1].value,spyData)).join('');
   renderSince(snapUpdate());
+  fwdLog();fwdRender();
   fillBacktests(mySeq,WL.map(function(t,i){return{tk:t,raw:res[i+1].value};}),spyData);
   sv('wl-ts','Updated '+ts());
   btnDone(btn,true);
@@ -2057,18 +2153,19 @@ function btAnalyze(scores,fwd){
 // aligned by DATE. Without it, bars are lined up by their final bar, which is
 // fine for the 2-year data (it carries no dates).
 function* btScoreGen(closes,vols,spy,seArr){
-  var n=closes.length,so=spy.length-n,scores=[],fwd=[];
+  var n=closes.length,so=spy.length-n,scores=[],fwd=[],a200=[],a50=[];
   var total=Math.max(1,n-BT_H-BT_START);
   for(var t=BT_START;t<=n-1-BT_H;t++){
     var se=seArr?seArr[t]:t+so;
     if(se>=59){
       var r=calcBuySell(closes.slice(0,t+1),vols?vols.slice(0,t+1):null,spy.slice(0,se+1),null,{replay:true});
-      if(r&&!isNaN(r.score)){scores.push(r.score);fwd.push((closes[t+BT_H]/closes[t]-1)*100);}
+      if(r&&!isNaN(r.score)){scores.push(r.score);fwd.push((closes[t+BT_H]/closes[t]-1)*100);a200.push(closes[t]>btAvg(closes,t,200));a50.push(closes[t]>btAvg(closes,t,50));}
     }
     if((t-BT_START)%40===39)yield(t-BT_START+1)/total;
   }
-  return{scores:scores,fwd:fwd};
+  return{scores:scores,fwd:fwd,a200:a200,a50:a50};
 }
+function btAvg(c,t,n){var k=Math.max(0,t-n+1),s=0;for(var i=k;i<=t;i++)s+=c[i];return s/(t-k+1);}
 function btScores(closes,vols,spy,seArr){
   var g=btScoreGen(closes,vols,spy,seArr),s;
   while(!(s=g.next()).done){}
@@ -2327,7 +2424,7 @@ function wCard(tk,raw,spyRaw){
     var vRat=avgV>0?recentV/avgV:0;
     if(vRat>0)volHtml=`<span class="${vRat>1.5?'vol-badge vol-high':'vol-badge vol-norm'}">${vRat>1.5?'🔥':''} Vol ${fmt(vRat,1)}×</span>`;
   }
-  if(bs){var en=getEarningsDaysUntil(tk);_sigNow[tk]={v:bs.verdict,s:bs.score,e:en?en.days:null,h:pH>-0.5?1:0};}
+  if(bs){var en=getEarningsDaysUntil(tk);_sigNow[tk]={v:bs.verdict,s:bs.score,e:en?en.days:null,h:pH>-0.5?1:0,p:p,m:(spyRaw&&spyRaw.length)?spyRaw[spyRaw.length-1]:null};}
   // Backtest summary is filled in asynchronously after the cards render
   var btHtml=bs?'<div id="bt-'+tk+'" style="font-size:9px;color:var(--mt);margin-bottom:8px">📊 Backtesting…</div>':'';
 
@@ -2608,6 +2705,7 @@ compFG();
 loadCommod();loadSpreads();loadVix();loadMacro();loadM7();loadRS();runScan();
 // Earnings-date estimates from SEC: deferred so they never compete with the first data load
 setTimeout(ensureEarningsEstimates,8000);
+setTimeout(function(){fwdUpdate();},12000); // score any signals that are now 20 trading days old
 
 // Refresh intervals
 setInterval(loadVix,60000);
